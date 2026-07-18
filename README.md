@@ -121,14 +121,14 @@ agents/pharmacovigilance/
                 manifest.yaml (single source of truth) + tools/ (intake_icsr, openfda_lookup,
                 assess_seriousness, detect_duplicate, record_causality, pv_core) + demo_extra.sh
 policies/       the six Cedar policies (rendered from the manifest), human-readable + a README
-docs/           architecture note + Word/PowerPoint guides (regulatory-adherence, SA runbook, maintenance, depth-evidence, cost/latency one-pager; generators/ regenerates the guides & decks, decks)
+docs/           architecture note + Word/PowerPoint guides (regulatory-adherence, SA runbook, maintenance, depth-evidence, cost/latency one-pager, IdP-federation reference; generators/ regenerates the guides & decks, decks)
 ```
 
 ## Honesty boundary
 
 The accelerator owns the governed agent, the Cedar policies, the tools, the fail-closed PHI masking, the
 human-gate workflow, the WORM audit design, the seriousness rules engine, the live openFDA integration,
-the IaC, the tests. The adopter owns: IdP federation and reviewer role mapping; validated connectors to
+the IaC, the tests. The adopter owns: IdP federation to their own provider (a working OIDC/SAML → Cognito → Cedar reference ships as `lib/engine/deploy_federation.sh` + `docs/IdP-Federation-Reference.md`, so federated users hit the same deny-by-default policies as the built-in users) and reviewer role mapping; validated connectors to
 the safety system of record (Argus/ArisG/E2B gateway); licensed MedDRA/WHODrug coding; the authoritative
 market-specific reporting rules and their regulatory review; computer-system validation (CSV/CSA); and
 production authorization to operate. `meddra_code` and `whodrug_code` remain licensed-dictionary stubs, and connectors to the production safety system of record (Argus/ArisG/E2B gateway) remain adopter work. The repo does ship a **real** governed OAuth connector — `verify_source` authenticates to a mock safety database via AgentCore Identity (no stored secret) and the SoR verifies the token's RS256 signature against the Cognito JWKS — as the reference pattern.
