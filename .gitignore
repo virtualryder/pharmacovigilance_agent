@@ -22,3 +22,6 @@ Thumbs.db
 # Rendered doc byproducts
 docs/*.pdf
 *.jpg
+
+# Node deps for docs/generators
+node_modules/

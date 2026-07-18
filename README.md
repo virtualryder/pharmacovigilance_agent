@@ -118,7 +118,7 @@ agents/pharmacovigilance/
                 manifest.yaml (single source of truth) + tools/ (intake_icsr, openfda_lookup,
                 assess_seriousness, detect_duplicate, record_causality, pv_core) + demo_extra.sh
 policies/       the six Cedar policies (rendered from the manifest), human-readable + a README
-docs/           architecture note + Word/PowerPoint guides (regulatory-adherence, SA runbook, maintenance, depth-evidence, cost/latency one-pager, decks)
+docs/           architecture note + Word/PowerPoint guides (regulatory-adherence, SA runbook, maintenance, depth-evidence, cost/latency one-pager; generators/ regenerates the guides & decks, decks)
 ```
 
 ## Honesty boundary
