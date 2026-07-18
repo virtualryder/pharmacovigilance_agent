@@ -1,0 +1,196 @@
+# pharmacovigilance/manifest.yaml
+# HCLS flagship: a governed pharmacovigilance (drug-safety) ICSR intake agent, rebuilt on the SAME
+# manifest-driven governed-hero-agent template as the benefits, financial-aid, and housing agents.
+# The agent assembles, codes, and drafts an Individual Case Safety Report and de-identifies PHI; a
+# qualified safety reviewer makes and commits the submission at the human sign-off gate. It never
+# self-submits. render.py turns this manifest into the deploy inputs.
+
+agent:
+  slug: pharmacovigilance
+  title: Pharmacovigilance ICSR Intake and Reporting
+  industry: HCLS
+  region: us-east-1
+  prefix: pv
+
+identity:                          # stable, long-lived (own lifecycle)
+  pool_name: pv-pharmacovigilance
+  client_name: pv-gw
+  reviewer_group: pv_reviewer
+  users:                           # placeholder passwords — override via env / rotate before shared use
+    - { name: pv_reviewer, password: "ChangeMe-Reviewer1!", in_group: true }
+    - { name: approver,    password: "ChangeMe-Approver1!", in_group: true }
+    - { name: outsider,    password: "ChangeMe-Outsider1!", in_group: false }
+
+engine:
+  name: pv_pharmacovigilance_authz
+  description: Deny-by-default Cedar authz for the pharmacovigilance ICSR agent
+
+gateway:
+  name: pv-pharmacovigilance-gw
+  description: Pharmacovigilance governed tool gateway
+  ssm_discovery_param: /pv-pharmacovigilance/gateway-url
+
+guardrail:
+  name: pv-pharmacovigilance-guardrail
+  description: "Fail-closed output control for ICSR narratives: PHI anonymize + prompt-attack"
+  pii_anonymize: [NAME, AGE, EMAIL, PHONE, US_SOCIAL_SECURITY_NUMBER, ADDRESS]
+  prompt_attack: HIGH
+
+controls:
+  fail_closed_masking: true
+  worm_audit: true
+  human_signoff_gate: true
+
+audit:
+  object_lock_mode: GOVERNANCE
+  retention_days: 1
+
+model:
+  draft_model_id: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+
+runtime:
+  name: pv_runtime_agent
+
+tools:
+  - target: intake-icsr
+    lambda: pv-intake-icsr
+    handler: intake_icsr.py
+    kind: domain
+    mcp_tools:
+      - name: intake_icsr
+        description: "Extract the non-PHI decision fields (suspect product, adverse-event terms, ICH E2B seriousness flags, expectedness) from a raw adverse-event source (E2B/CIOMS text or JSON)."
+        input: { source: { type: string, description: "Raw adverse-event report text or JSON." } }
+        required: [source]
+
+  - target: openfda-lookup
+    lambda: pv-openfda-lookup
+    handler: openfda_lookup.py
+    kind: domain
+    mcp_tools:
+      - name: openfda_lookup
+        description: "Fetch AGGREGATE, non-PHI background (FAERS report count + top MedDRA reaction terms) for the suspect drug from the live openFDA drug-event API (authoritative). The drug name is non-PHI, so run this before mask_pii; pass the background to the reviewer/narrative for context."
+        input:
+          drug: { type: string, description: "Suspect product / drug name." }
+        required: [drug]
+
+  - target: mask-pii
+    lambda: pv-mask-pii
+    handler: mask_pii.py
+    kind: control
+    mcp_tools:
+      - name: mask_pii
+        description: "Fail-closed PHI de-identification of an adverse-event case (patient name, DOB, address, identifiers, contact info); sets deidentified=true only if masking succeeded."
+        input: { case: { type: string, description: "Adverse-event case text that may contain PHI." } }
+        required: [case]
+
+  - target: assess-seriousness
+    lambda: pv-assess-seriousness
+    handler: assess_seriousness.py
+    kind: domain
+    mcp_tools:
+      - name: assess_seriousness
+        description: "Deterministic ICH E2B(R3) / 21 CFR 314.80 seriousness assessment + reporting-clock determination (EXPEDITED 15-day / PERIODIC / ROUTINE) on de-identified fields; case must be masked first (deidentified true)."
+        input:
+          case: { type: string, description: "De-identified case text." }
+          flags: { type: string, description: "Optional JSON of explicit seriousness booleans (death, life_threatening, hospitalization, disability, congenital_anomaly, medically_important)." }
+          expectedness: { type: string, description: "listed | unlisted | unknown (reaction listedness vs the product reference safety information)." }
+          deidentified: { type: boolean, description: "True if masked by mask_pii." }
+        required: [deidentified]
+
+  - target: detect-duplicate
+    lambda: pv-detect-duplicate
+    handler: detect_duplicate.py
+    kind: domain
+    mcp_tools:
+      - name: detect_duplicate
+        description: "Deterministic duplicate-ICSR detection on de-identified case key fields (suspect product, event term, onset, reporter type); returns DUPLICATE (with a HOLD) or UNIQUE. Prevents double-reporting the same case."
+        input:
+          case_key: { type: string, description: "De-identified case key (product|event|onset|reporter) or JSON." }
+          known_keys: { type: string, description: "Comma-separated or JSON list of already-received case keys." }
+        required: []
+
+  - target: record-causality
+    lambda: pv-record-causality
+    handler: record_causality.py
+    kind: domain
+    mcp_tools:
+      - name: record_causality
+        description: "PREPARE a documented causality / reportability determination (the highest-risk discretionary safety judgment) on de-identified data; requires a written rationale and returns a record a DIFFERENT senior safety physician must approve. Never commits. Case must be masked first."
+        input:
+          assessment: { type: string, description: "The causality/reportability conclusion (e.g. related / not related / reportable)." }
+          rationale: { type: string, description: "The documented, case-specific clinical rationale (required)." }
+          deidentified: { type: boolean, description: "True if masked by mask_pii." }
+        required: [deidentified]
+
+  - target: pv-core
+    lambda: pv-core-tools
+    handler: pv_core.py
+    kind: domain
+    guardrailed: true
+    mcp_tools:
+      - name: draft_narrative
+        description: "Draft a de-identified CIOMS/ICSR clinical narrative; case must be masked first."
+        input:
+          case: { type: string, description: "De-identified case JSON/text." }
+          deidentified: { type: boolean, description: "True if masked by mask_pii." }
+        required: [case, deidentified]
+      - name: finalize_submission
+        description: "Commit/submit an ICSR to the regulator; agent must never call this directly."
+        input: { icsr_id: { type: string, description: "ICSR/case id." } }
+        required: [icsr_id]
+      - name: commit_causality
+        description: "Commit a causality/reportability determination; a senior-safety-physician decision — the agent must never call this."
+        input: { causality_id: { type: string, description: "Causality record id." } }
+        required: [causality_id]
+
+  - target: write-audit
+    lambda: pv-write-audit
+    handler: write_audit.py
+    kind: control
+    mcp_tools:
+      - name: write_audit
+        description: "Append a tamper-evident audit record (append-only ledger + WORM copy); returns stored=false if the exact record already exists."
+        input:
+          icsr_id: { type: string, description: "Case/record id." }
+          action: { type: string, description: "Governed action being recorded." }
+          phase: { type: string, description: "INTENT or COMMITTED." }
+          actor: { type: string, description: "Who acted." }
+          payload: { type: string, description: "Evidence payload (JSON string)." }
+        required: [icsr_id, action, phase]
+
+  - target: request-signoff
+    lambda: pv-request-signoff
+    handler: request_signoff.py
+    kind: control
+    mcp_tools:
+      - name: request_signoff
+        description: "Request qualified-person sign-off before submitting an ICSR; starts a separation-of-duties approval workflow. The agent can never submit directly."
+        input:
+          icsr_id: { type: string, description: "Case/record id." }
+          requester: { type: string, description: "The safety reviewer requesting the submission." }
+        required: [icsr_id, requester]
+
+policies:
+  - { name: pv_reviewer_permit,          kind: permit, role_group: pv_reviewer }
+  - { name: mask_before_assess,          kind: forbid, action: assess_seriousness,   unless_deidentified: true }
+  - { name: mask_before_causality,       kind: forbid, action: record_causality,     unless_deidentified: true }
+  - { name: mask_before_draft,           kind: forbid, action: draft_narrative,      unless_deidentified: true }
+  - { name: no_self_submit,              kind: forbid, action: finalize_submission }
+  - { name: no_self_causality_commit,    kind: forbid, action: commit_causality }
+
+workflow:
+  entrypoint: agent.py
+  consequential_action: finalize_submission
+  steps:
+    - "intake_icsr - extract the non-PHI decision fields (suspect product, event terms, seriousness flags, expectedness) from the raw adverse-event source."
+    - "openfda_lookup - fetch aggregate FAERS background for the suspect product from the live openFDA API (non-PHI); keep it for reviewer context."
+    - "mask_pii - de-identify the case (PHI); use the returned masked_case for assessment, the narrative, and the audit."
+    - "assess_seriousness - on the de-identified case with deidentified true, determine ICH E2B(R3) seriousness and the reporting clock (expedited 15-day / periodic / routine)."
+    - "draft_narrative - draft the CIOMS/ICSR narrative, passing the masked case and deidentified true."
+    - "write_audit - record an INTENT audit entry for the ICSR."
+    - "request_signoff - request qualified-person sign-off to submit (a DIFFERENT qualified person must approve)."
+
+honesty_boundary:
+  stubbed: [meddra_code, whodrug_code, connect_safety_system]
+  connectors: "MedDRA/WHODrug licensed dictionaries and safety-system (Argus/ArisG/E2B gateway) integration is customer engagement work"
+  not_certified: true
