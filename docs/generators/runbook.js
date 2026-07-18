@@ -4,7 +4,7 @@ const { H1, H2, H3, P, bold, code, bullet, num, codeBlock, callout, table, space
 const cover = coverAndToc(
   ["Pharmacovigilance ICSR Intake Agent", "on Amazon Bedrock AgentCore"],
   "Solution Architect Deployment Runbook",
-  "Step-by-step deployment of the governed pharmacovigilance (drug-safety) ICSR-intake accelerator into an AWS account — identity, governance spine, tools, and the Runtime agent — from one manifest. Region: us-east-1. Accelerator reference; not a validated or production-certified system. Version 1.1 · 2026.",
+  "Step-by-step deployment of the governed pharmacovigilance (drug-safety) ICSR-intake accelerator into an AWS account — identity, governance spine, tools, and the Runtime agent — from one manifest. Region: us-east-1. Accelerator reference; not a validated or production-certified system. Version 1.2 · 2026.",
   ["1. Overview", "2. Prerequisites", "3. What gets deployed", "4. Deployment procedure", "5. Configuration reference", "6. Validation checklist", "7. Teardown", "8. Windows / Git-Bash operational notes"]
 );
 
@@ -38,6 +38,7 @@ const body = [
   bullet([bold("agents/pharmacovigilance/ "), "— the only agent-specific part: ", code("manifest.yaml"), " (single source of truth), ", code("tools/"), " (", code("intake_icsr.py"), ", ", code("openfda_lookup.py"), ", ", code("assess_seriousness.py"), ", ", code("detect_duplicate.py"), ", ", code("record_causality.py"), ", ", code("pv_core.py"), "), and ", code("demo_extra.sh"), "."]),
 
   bullet([bold("lib/connector/ "), "— the reusable governed OAuth connector (optional depth add-on): ", code("verify_source"), " (mints an outbound token via AgentCore Identity — no stored secret), ", code("deploy_connector.sh"), " / ", code("prove_connector.sh"), ", and a mock OAuth-protected system of record. Deployed separately from the spine."]),
+  bullet([bold("Corporate SSO (optional). "), code("lib/engine/deploy_federation.sh"), " + ", code("lib/controls/idp_group_mapper.py"), " federate an external OIDC/SAML IdP (Okta / Entra) into the pool so employees sign in with SSO and hit the SAME Cedar policies as the built-in users — see ", code("docs/IdP-Federation-Reference.md"), "."]),
   H1("3. What gets deployed"),
   table(["Component", "AWS resource(s)", "Lifecycle"], [
     [[bold("Identity")], "Cognito user pool pv-pharmacovigilance, app client pv-gw, users pv_reviewer / approver / outsider", "Stable"],
@@ -45,7 +46,7 @@ const body = [
     [[bold("Gateway")], "AgentCore Gateway pv-pharmacovigilance-gw (MCP, CUSTOM_JWT, ENFORCE)", "Spine"],
     [[bold("Tools")], "Lambdas: pv-intake-icsr, pv-openfda-lookup, pv-mask-pii, pv-assess-seriousness, pv-detect-duplicate, pv-record-causality, pv-core-tools, pv-write-audit, pv-request-signoff (+ 3 sign-off Lambdas)", "Spine"],
     [[bold("Guardrail")], "Bedrock Guardrail pv-pharmacovigilance-guardrail (PHI anonymize + prompt-attack)", "Spine"],
-    [[bold("WORM audit")], "DynamoDB pv-audit (append-only) + S3 Object Lock bucket pv-audit-worm-<acct>-<region>", "Spine"],
+    [[bold("WORM audit")], "DynamoDB pv-audit (append-only) + S3 Object Lock bucket pv-audit-worm-<acct>-<region>; each record hash-chained (tamper-evident)", "Spine"],
     [[bold("Human gate")], "Step Functions pv-signoff + DynamoDB pv-pending-approvals", "Spine"],
     [[bold("Discovery")], "SSM parameter /pv-pharmacovigilance/gateway-url", "Spine"],
     [[bold("Runtime")], "AgentCore Runtime pv_runtime_agent (ARM64 container via CodeBuild + ECR)", "Runtime"],
@@ -68,6 +69,7 @@ const body = [
   ...codeBlock(["bash lib/engine/deploy.sh agents/pharmacovigilance"]),
   callout("Run cycles serialized", [["Do not run two spine deploys concurrently — overlapping runs collide on the policy-engine name. Deploy takes roughly three to four minutes end to end. Deploy from a path without spaces (see §8)."]], G.colors.TEAL),
 
+  P([bold("Tamper-evident audit. "), "The demo also proves the audit ledger is ", bold("hash-chained"), ": each record embeds the prior record’s hash (", code("chain_hash = SHA-256(prev_hash + entry_hash)"), "), so editing, reordering, or deleting any record breaks every link after it — on top of the append-only + Object-Lock guarantees. ", code("lib/controls/verify_chain.py"), " replays the links and reports INTACT or the first broken record."]),
   H2("Step 3 — Prove the governance (30 checks)"),
   P("Mints safety-reviewer and outsider tokens and exercises the full governed workflow live, in ENFORCE mode. Expect 30 passed / 0 failed."),
   ...codeBlock(["bash lib/engine/demo.sh agents/pharmacovigilance", "bash lib/engine/redteam.sh agents/pharmacovigilance   # adversarial: governance holds under attack (7/7)"]),
@@ -91,6 +93,10 @@ const body = [
   ...codeBlock(["bash lib/engine/redteam.sh agents/pharmacovigilance          # adversarial proof: governance holds under attack"]),
   P(["The connector proves the agent authenticates to a real, OAuth2-protected dependency without holding a secret. ", code("deploy_connector.sh"), " stands up a mock system of record (", code("MOCK-Argus-SafetyDB"), ") behind API Gateway, an AgentCore Identity OAuth2 credential provider + workload identity, and the governed ", code("verify_source"), " tool. ", code("prove_connector.sh"), " mints a token through Identity and shows the SoR rejects unauthenticated calls, the tool holds no secret, and Cedar deny-by-default extends to the connector. The mock SoR verifies the token’s ", bold("RS256 signature against the Cognito JWKS"), " (not just its claims), so a forged or tampered token is rejected:"]),
   ...codeBlock(["bash lib/connector/deploy_connector.sh agents/pharmacovigilance   # mock SoR + Identity OAuth provider + verify_source", "bash lib/connector/prove_connector.sh  agents/pharmacovigilance   # OAuth + RS256/JWKS + no stored secret + deny-by-default"]),
+  H2("Step 6 (optional) — Federate your corporate IdP (SSO)"),
+  P(["Swap the built-in test users for real employees from Okta / Microsoft Entra / any OIDC or SAML IdP, WITHOUT changing a Cedar policy. A Cognito Pre-Token-Generation Lambda (", code("idp_group_mapper.py"), ") maps the IdP’s group claim into ", code("cognito:groups"), ", so the existing ", code("pv_reviewer_permit"), " authorizes federated users; a user whose groups map to nothing gets no role, so deny-by-default still holds. Idempotent and independent of the spine."]),
+  ...codeBlock(["# OIDC (Okta / Entra / Ping …):", "IDP_TYPE=oidc IDP_NAME=Okta OIDC_ISSUER=https://<org>.okta.com \\", "  OIDC_CLIENT_ID=<id> OIDC_CLIENT_SECRET=<secret> GROUPS_CLAIM=groups \\", "  GROUP_MAP='{\"SafetyReviewers\":\"pv_reviewer\"}' \\", "  bash lib/engine/deploy_federation.sh agents/pharmacovigilance", "# tear the federation back down (keeps the base pool + test users):", "DESTROY=1 IDP_NAME=Okta bash lib/engine/deploy_federation.sh agents/pharmacovigilance"]),
+  P(["Full recipe (SAML too), the group→role mapping, and the adopter-owns boundary: ", code("docs/IdP-Federation-Reference.md"), "."]),
   H1("5. Configuration reference"),
   table(["Setting", "Where", "Default / value"], [
     ["Region", "agent.region in the manifest", "us-east-1"],
@@ -113,6 +119,7 @@ const body = [
   bullet(["Runtime invoke: pv_reviewer → workflow summary; outsider → ACCESS DENIED."]),
   bullet(["CloudWatch log group ", code("/aws/bedrock-agentcore/runtimes/pv_runtime_agent-*-DEFAULT"), " shows per-step, identity-tagged logs."]),
 
+  bullet(["Tamper-evident audit: ", code("lib/controls/verify_chain.py"), " on a case’s records reports ", code("intact: true"), "; altering any record makes it report the first broken link."]),
   H1("7. Teardown"),
   P("The spine tears down with zero residual (including the Object-Lock bucket, which requires an admin governance-bypass the tool role does not have). Identity is preserved by design — remove it explicitly only when finished."),
   ...codeBlock(["bash lib/engine/destroy.sh agents/pharmacovigilance     # spine only; leaves identity + Runtime", "# optional, full cleanup:", "#   remove the Cognito pool, and from lib/runtime: agentcore destroy"]),
