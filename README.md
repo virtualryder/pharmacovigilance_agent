@@ -1,5 +1,7 @@
 # Pharmacovigilance Agent — Governed Agentic AI on Amazon Bedrock AgentCore
 
+[![CI](https://github.com/virtualryder/pharmacovigilance_agent/actions/workflows/ci.yml/badge.svg)](https://github.com/virtualryder/pharmacovigilance_agent/actions/workflows/ci.yml)
+
 A **governed** pharmacovigilance (drug-safety) ICSR intake agent for Healthcare & Life Sciences. It
 assembles and codes an adverse-event report, pulls authoritative FAERS background, de-identifies PHI,
 assesses seriousness and the regulatory reporting clock, drafts a CIOMS/ICSR narrative, and **pauses at
