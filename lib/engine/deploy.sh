@@ -43,7 +43,7 @@ if ! aws iam get-role --role-name "$TOOL_ROLE" >/dev/null 2>&1; then
 fi
 TOOL_ROLE_ARN="arn:aws:iam::$ACC:role/$TOOL_ROLE"
 # Tool perms (superset; harmless if a control is disabled). Names come from the manifest.
-printf '%s' '{"Version":"2012-10-17","Statement":[{"Sid":"NLP","Effect":"Allow","Action":["comprehendmedical:DetectPHI","comprehend:DetectPiiEntities"],"Resource":"*"},{"Sid":"BedrockDraft","Effect":"Allow","Action":["bedrock:InvokeModel","bedrock:InvokeModelWithResponseStream","bedrock:ApplyGuardrail"],"Resource":"*"},{"Sid":"AuditLedgerAppend","Effect":"Allow","Action":["dynamodb:PutItem"],"Resource":"arn:aws:dynamodb:'"$REGION"':'"$ACC"':table/'"$AUDIT_TABLE"'"},{"Sid":"AuditWormPut","Effect":"Allow","Action":["s3:PutObject"],"Resource":"arn:aws:s3:::'"$WORM_BUCKET"'/*"},{"Sid":"SignoffStart","Effect":"Allow","Action":["states:StartExecution"],"Resource":"arn:aws:states:'"$REGION"':'"$ACC"':stateMachine:'"$SM_NAME"'"},{"Sid":"AuditTamperDeny","Effect":"Deny","Action":["dynamodb:DeleteItem","dynamodb:UpdateItem","s3:DeleteObject","s3:DeleteObjectVersion","s3:BypassGovernanceRetention","s3:PutObjectRetention","s3:PutObjectLegalHold"],"Resource":"*"}]}' > tool-perms.json
+printf '%s' '{"Version":"2012-10-17","Statement":[{"Sid":"NLP","Effect":"Allow","Action":["comprehendmedical:DetectPHI","comprehend:DetectPiiEntities"],"Resource":"*"},{"Sid":"BedrockDraft","Effect":"Allow","Action":["bedrock:InvokeModel","bedrock:InvokeModelWithResponseStream","bedrock:ApplyGuardrail"],"Resource":"*"},{"Sid":"AuditLedgerAppend","Effect":"Allow","Action":["dynamodb:PutItem","dynamodb:GetItem"],"Resource":"arn:aws:dynamodb:'"$REGION"':'"$ACC"':table/'"$AUDIT_TABLE"'"},{"Sid":"AuditWormPut","Effect":"Allow","Action":["s3:PutObject"],"Resource":"arn:aws:s3:::'"$WORM_BUCKET"'/*"},{"Sid":"SignoffStart","Effect":"Allow","Action":["states:StartExecution"],"Resource":"arn:aws:states:'"$REGION"':'"$ACC"':stateMachine:'"$SM_NAME"'"},{"Sid":"AuditTamperDeny","Effect":"Deny","Action":["dynamodb:DeleteItem","dynamodb:UpdateItem","s3:DeleteObject","s3:DeleteObjectVersion","s3:BypassGovernanceRetention","s3:PutObjectRetention","s3:PutObjectLegalHold"],"Resource":"*"}]}' > tool-perms.json
 aws iam put-role-policy --role-name "$TOOL_ROLE" --policy-name "${PREFIX}-tool-perms" --policy-document file://tool-perms.json
 sleep 10
 
@@ -85,7 +85,8 @@ fi
 deploy_fn(){ # $1 fn  $2 src.py  [$3 role]
   local role="${3:-$TOOL_ROLE_ARN}"
   cp "$2" lambda_function.py
-  python -c "import zipfile;z=zipfile.ZipFile('$1.zip','w',zipfile.ZIP_DEFLATED);z.write('lambda_function.py');z.close()"
+  _shared="$(dirname "$2")/evidence.py"; if [ -f "$_shared" ]; then cp "$_shared" evidence.py; else rm -f evidence.py; fi
+  python -c "import zipfile,os; z=zipfile.ZipFile('$1.zip','w',zipfile.ZIP_DEFLATED); z.write('lambda_function.py'); (os.path.exists('evidence.py') and z.write('evidence.py')); z.close()"
   if aws lambda get-function --function-name "$1" --region "$REGION" >/dev/null 2>&1; then
     aws lambda update-function-code --function-name "$1" --zip-file "fileb://$1.zip" --region "$REGION" >/dev/null
   else
@@ -109,7 +110,7 @@ fi
 # ---- 3b. Human sign-off gate ----
 if [ "$CTRL_SIGNOFF" = "1" ]; then
   if ! aws dynamodb describe-table --table-name "$PENDING_TABLE" --region "$REGION" >/dev/null 2>&1; then
-    aws dynamodb create-table --table-name "$PENDING_TABLE" --attribute-definitions AttributeName=icsr_id,AttributeType=S --key-schema AttributeName=icsr_id,KeyType=HASH --billing-mode PAY_PER_REQUEST --region "$REGION" >/dev/null
+    aws dynamodb create-table --table-name "$PENDING_TABLE" --attribute-definitions AttributeName=case_id,AttributeType=S --key-schema AttributeName=case_id,KeyType=HASH --billing-mode PAY_PER_REQUEST --region "$REGION" >/dev/null
     aws dynamodb wait table-exists --table-name "$PENDING_TABLE" --region "$REGION"; log "created pending-approvals table"
   fi
   SIGNOFF_ROLE="${PREFIX}-signoff-exec"; SFN_ROLE="${PREFIX}-signoff-sfn"
@@ -119,7 +120,7 @@ if [ "$CTRL_SIGNOFF" = "1" ]; then
     log "created role $SIGNOFF_ROLE"
   fi
   SIGNOFF_ROLE_ARN="arn:aws:iam::$ACC:role/$SIGNOFF_ROLE"
-  printf '%s' '{"Version":"2012-10-17","Statement":[{"Sid":"Pending","Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:PutItem","dynamodb:UpdateItem"],"Resource":"arn:aws:dynamodb:'"$REGION"':'"$ACC"':table/'"$PENDING_TABLE"'"},{"Sid":"AuditPut","Effect":"Allow","Action":["dynamodb:PutItem"],"Resource":"arn:aws:dynamodb:'"$REGION"':'"$ACC"':table/'"$AUDIT_TABLE"'"},{"Sid":"TaskToken","Effect":"Allow","Action":["states:SendTaskSuccess","states:SendTaskFailure"],"Resource":"*"}]}' > signoff-perms.json
+  printf '%s' '{"Version":"2012-10-17","Statement":[{"Sid":"Pending","Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:PutItem","dynamodb:UpdateItem"],"Resource":"arn:aws:dynamodb:'"$REGION"':'"$ACC"':table/'"$PENDING_TABLE"'"},{"Sid":"AuditPut","Effect":"Allow","Action":["dynamodb:PutItem","dynamodb:GetItem"],"Resource":"arn:aws:dynamodb:'"$REGION"':'"$ACC"':table/'"$AUDIT_TABLE"'"},{"Sid":"AuditWorm","Effect":"Allow","Action":["s3:PutObject"],"Resource":"arn:aws:s3:::'"$WORM_BUCKET"'/*"},{"Sid":"TaskToken","Effect":"Allow","Action":["states:SendTaskSuccess","states:SendTaskFailure"],"Resource":"*"}]}' > signoff-perms.json
   aws iam put-role-policy --role-name "$SIGNOFF_ROLE" --policy-name "${PREFIX}-signoff-perms" --policy-document file://signoff-perms.json
   printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"states.amazonaws.com"},"Action":"sts:AssumeRole"}]}' > sfn-trust.json
   if ! aws iam get-role --role-name "$SFN_ROLE" >/dev/null 2>&1; then
@@ -142,7 +143,7 @@ fi
 # ---- 3c. Wire resource-name env into the control + sign-off-gate lambdas. They read AUDIT_TABLE /
 # AUDIT_BUCKET / PENDING_TABLE / SM_NAME from env (defaults are pv-*), so this makes them point at
 # THIS agent's resources. The guardrailed lambda keeps its guardrail env (set above). ----
-CTRL_ENV="Variables={AUDIT_TABLE=$AUDIT_TABLE,AUDIT_BUCKET=$WORM_BUCKET,PENDING_TABLE=$PENDING_TABLE,SM_NAME=$SM_NAME,DRAFT_MODEL_ID=$DRAFT_MODEL_ID}"
+CTRL_ENV="Variables={AUDIT_TABLE=$AUDIT_TABLE,AUDIT_BUCKET=$WORM_BUCKET,PENDING_TABLE=$PENDING_TABLE,SM_NAME=$SM_NAME,DRAFT_MODEL_ID=$DRAFT_MODEL_ID,SOURCE=${PREFIX}-evidence,TENANT_ID=$PREFIX,MODEL_ID=$DRAFT_MODEL_ID,POLICY_VERSION=v1,RULE_VERSION=v1,DEPLOYMENT_VERSION=v1}"
 wire_env(){ for i in 1 2 3 4 5 6; do aws lambda update-function-configuration --function-name "$1" --environment "$CTRL_ENV" --region "$REGION" >/dev/null 2>&1 && { log "wired resource env into $1"; return; }; sleep 4; done; }
 while IFS=$'\t' read -r target lambda handler kind guarded; do
   [ -z "$target" ] && continue

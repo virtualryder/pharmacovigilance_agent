@@ -2,27 +2,29 @@ import json
 import hashlib
 import sys
 
-# verify_chain — replay a case's audit records and prove the hash chain is intact (tamper-evidence).
-#
-# Given the audit records for one case (as written by write_audit.py), this:
-#   1. recomputes each record's entry_hash from its content (all fields except the 3 chain fields) and
-#      checks it matches the stored entry_hash  -> detects ANY content edit;
-#   2. recomputes chain_hash = SHA-256(prev_hash + ":" + entry_hash) and checks it matches  -> detects
-#      tampering with the chain fields themselves;
-#   3. reconstructs the order by following the links (GENESIS -> record whose prev_hash == GENESIS ->
-#      the record whose prev_hash == that record's chain_hash -> ...) and checks every record is visited
-#      exactly once with no fork, orphan, gap, or reordering.
-# Returns {"intact": bool, "length": n, "broken_at": <chain_hash|null>, "reason": str}. Read-only; pure
-# stdlib, so it runs anywhere (a verifier does not need — and should not have — write access to the store).
-#
-# Usage as a CLI:  python verify_chain.py records.json      (records.json = a JSON array of the case's items)
+# verify_chain — replay a case's evidence records and prove the hash chain is intact (tamper-evidence).
+# Checks: (1) each record's entry_hash recomputes from its content (detects any edit); (2) chain_hash =
+# SHA-256(prev_hash + entry_hash) recomputes (detects chain-field tampering); (3) the links form one
+# unbroken list from GENESIS with no fork/gap/duplicate; (4) the server-assigned seq is contiguous
+# 0..n-1 in link order (detects a spliced or reordered record even if hashes were recomputed). Read-only,
+# pure stdlib. Usage: python verify_chain.py records.json
 
 GENESIS = "GENESIS"
 _CHAIN_FIELDS = ("prev_hash", "entry_hash", "chain_hash")
 
 
+def _num_default(o):
+    # DynamoDB returns numbers as Decimal; normalize so write-time (int/float) and read-time (Decimal)
+    # canonical forms are identical — otherwise a faithfully-stored record would read as "tampered".
+    from decimal import Decimal
+    if isinstance(o, Decimal):
+        i = int(o)
+        return i if o == i else float(o)
+    raise TypeError("not JSON serializable: %r" % (o,))
+
+
 def _canonical(obj):
-    return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=_num_default)
 
 
 def _entry_hash(record):
@@ -35,12 +37,11 @@ def _chain_hash(prev_hash, eh):
 
 
 def verify(records):
-    recs = list(records or [])
+    recs = [r for r in (records or []) if not str(r.get("audit_id", "")).startswith("HEAD#")]
     n = len(recs)
     if n == 0:
         return {"intact": True, "length": 0, "broken_at": None, "reason": "empty chain (vacuously intact)"}
 
-    # 1 + 2: every record must be internally consistent (content -> entry_hash -> chain_hash).
     for r in recs:
         for f in _CHAIN_FIELDS:
             if f not in r:
@@ -54,7 +55,6 @@ def verify(records):
             return {"intact": False, "length": n, "broken_at": r.get("chain_hash"),
                     "reason": "chain_hash does not match prev_hash+entry_hash for audit_id=%s" % r.get("audit_id")}
 
-    # 3: the links must form one unbroken list from GENESIS with no fork / gap / duplicate.
     by_prev = {}
     for r in recs:
         by_prev.setdefault(r["prev_hash"], []).append(r)
@@ -62,8 +62,7 @@ def verify(records):
         return {"intact": False, "length": n, "broken_at": None,
                 "reason": "expected exactly one GENESIS record, found %d" % len(by_prev.get(GENESIS, []))}
 
-    seen = 0
-    tip = GENESIS
+    idx, tip = 0, GENESIS
     while True:
         nxt = by_prev.get(tip, [])
         if not nxt:
@@ -72,11 +71,14 @@ def verify(records):
             return {"intact": False, "length": n, "broken_at": tip,
                     "reason": "fork: %d records share prev_hash %s" % (len(nxt), tip[:12])}
         cur = nxt[0]
-        seen += 1
+        if cur.get("seq") is not None and cur.get("seq") != idx:
+            return {"intact": False, "length": n, "broken_at": cur.get("chain_hash"),
+                    "reason": "seq out of order: expected %d, got %s (audit_id=%s)" % (idx, cur.get("seq"), cur.get("audit_id"))}
+        idx += 1
         tip = cur["chain_hash"]
-    if seen != n:
+    if idx != n:
         return {"intact": False, "length": n, "broken_at": None,
-                "reason": "chain covers %d of %d records (orphaned / gap / reordered)" % (seen, n)}
+                "reason": "chain covers %d of %d records (orphaned / gap / reordered)" % (idx, n)}
 
     return {"intact": True, "length": n, "broken_at": None, "reason": "chain intact: %d linked records" % n}
 

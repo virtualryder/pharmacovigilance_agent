@@ -1,65 +1,41 @@
 import json
 import os
-import time
-import hashlib
 import boto3
 from botocore.exceptions import ClientError, BotoCoreError
+import evidence
 
-# request_signoff — the SANCTIONED path to submission. The agent/reviewer NEVER finalizes
-# directly (Cedar `no_self_submit` forbids that). Instead this tool:
-#   1. records an INTENT audit entry, then
-#   2. starts the `pv-signoff` Step Functions execution, which pauses at waitForTaskToken
-#      until a DIFFERENT qualified person approves (separation of duties).
+# request_signoff — the SANCTIONED path to commit. The agent/reviewer NEVER finalizes directly (Cedar
+# forbids it). This tool records an INTENT event through the CANONICAL evidence service, then starts the
+# sign-off Step Functions execution, which pauses until a DIFFERENT qualified person approves.
 #
-# NOTE: for the accelerator, `requester` is passed in the payload. In production it is
-# derived from the verified JWT identity on whose behalf the agent acts, not from input.
+# NOTE (P0-5, tracked): `requester` is taken from input here; in the hardened build it is derived from
+# the verified JWT identity on whose behalf the agent acts, not from the event body.
 
-AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "pv-audit")
-SM_NAME = os.environ.get("SM_NAME", "pv-signoff")
-
-
-def _audit_intent(region, icsr_id, requester):
-    try:
-        rec = {
-            "audit_id": hashlib.sha256(
-                ("%s|request_signoff|INTENT|%s" % (icsr_id, requester)).encode("utf-8")
-            ).hexdigest(),
-            "icsr_id": icsr_id, "action": "request_signoff", "phase": "INTENT",
-            "actor": requester, "recorded_at": int(time.time()), "source": "pv-request_signoff",
-        }
-        boto3.resource("dynamodb", region_name=region).Table(AUDIT_TABLE).put_item(
-            Item=rec, ConditionExpression="attribute_not_exists(audit_id)")
-    except ClientError:
-        pass  # duplicate INTENT is fine; audit is best-effort here (COMMITTED is the durable one)
-    except BotoCoreError:
-        pass
+SM_NAME = os.environ.get("SM_NAME", "governed-signoff")
 
 
 def handler(event, context):
-    e = event or {}
-    if isinstance(e, str):
-        try:
-            e = json.loads(e)
-        except Exception:
-            e = {}
+    e = evidence._coerce(event)
     region = os.environ.get("AWS_REGION", "us-east-1")
     acct = context.invoked_function_arn.split(":")[4]
-    icsr_id = e.get("icsr_id", "")
+    case_id = e.get("case_id") or e.get("icsr_id", "")
     requester = e.get("requester", "")
-    if not icsr_id or not requester:
-        return {"requested": False, "error": "icsr_id and requester are required"}
+    if not case_id or not requester:
+        return {"requested": False, "error": "case_id (or icsr_id) and requester are required"}
 
-    _audit_intent(region, icsr_id, requester)
+    evidence.record_event({
+        "case_id": case_id, "action": "request_signoff", "phase": "INTENT", "actor": requester,
+        "deidentified": True, "payload": {"requester": requester},
+    }, context, source=os.environ.get("SOURCE", "request_signoff"))
 
     sm_arn = "arn:aws:states:%s:%s:stateMachine:%s" % (region, acct, SM_NAME)
     try:
         r = boto3.client("stepfunctions", region_name=region).start_execution(
             stateMachineArn=sm_arn,
-            input=json.dumps({"icsr_id": icsr_id, "requester": requester}),
+            input=json.dumps({"case_id": case_id, "icsr_id": case_id, "requester": requester}),
         )
-        return {"requested": True, "phase": "PENDING_APPROVAL",
-                "execution_arn": r["executionArn"], "icsr_id": icsr_id,
+        return {"requested": True, "phase": "PENDING_APPROVAL", "execution_arn": r["executionArn"],
+                "case_id": case_id,
                 "note": "awaiting a DIFFERENT qualified person's approval (separation of duties)"}
     except (ClientError, BotoCoreError) as exc:
-        return {"requested": False,
-                "error": "start_execution failed: " + type(exc).__name__ + ": " + str(exc)}
+        return {"requested": False, "error": "start_execution failed: " + type(exc).__name__}

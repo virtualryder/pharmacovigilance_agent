@@ -40,7 +40,7 @@ if [ "$CTRL_SIGNOFF" = "1" ]; then
   RSO="$(call "$REV" "request-signoff___request_signoff" "{\"icsr_id\":\"$SO_ICSR\",\"requester\":\"$REV_U\"}")"
   check "reviewer  request_signoff"  ALLOW "$RSO"
   EXEC="$(printf '%s' "$RSO" | tr -d '\r' | grep -o 'arn:aws:states:[A-Za-z0-9:_-]*' | head -1)"
-  for i in $(seq 1 15); do ST="$(aws dynamodb get-item --table-name "$PENDING_TABLE" --key "{\"icsr_id\":{\"S\":\"$SO_ICSR\"}}" --region "$REGION" --query "Item.status.S" --output text 2>/dev/null)"; [ "$ST" = "PENDING" ] && break; sleep 2; done
+  for i in $(seq 1 15); do ST="$(aws dynamodb get-item --table-name "$PENDING_TABLE" --key "{\"case_id\":{\"S\":\"$SO_ICSR\"}}" --region "$REGION" --query "Item.status.S" --output text 2>/dev/null)"; [ "$ST" = "PENDING" ] && break; sleep 2; done
   SELFA="$(soapprove "$REV_U")"
   if echo "$SELFA" | grep -qi 'separation-of-duties'; then echo "  PASS | requester CANNOT self-approve (SoD)"; pass=$((pass+1)); else echo "  FAIL | self-approval not blocked -> $SELFA"; fail=$((fail+1)); fi
   APPRA="$(soapprove "$APP_U")"

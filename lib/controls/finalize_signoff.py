@@ -1,40 +1,31 @@
 import os
-import time
 import hashlib
-import boto3
-from botocore.exceptions import ClientError
+import evidence
 
-# finalize_signoff — the PRIVILEGED submission task, invoked by the pv-signoff state machine
-# ONLY after a valid separation-of-duties approval. This is the sole path that finalizes an
-# ICSR; the agent can never reach it (Cedar forbids the direct finalize tool, and this Lambda
-# is not exposed on the Gateway). It records the COMMITTED audit entry.
-
-AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "pv-audit")
+# finalize_signoff — the PRIVILEGED commit task, invoked by the sign-off state machine ONLY after a
+# valid separation-of-duties approval. The agent can never reach it (Cedar forbids the direct finalize
+# tool and this Lambda is not on the Gateway). It records the COMMITTED decision through the CANONICAL
+# evidence service (hash-chained + WORM), fail-loud — no raw put_item, no swallowed errors.
 
 
 def handler(event, context):
-    region = os.environ.get("AWS_REGION", "us-east-1")
-    icsr_id = event.get("icsr_id")
+    case_id = event.get("case_id") or event.get("icsr_id")
     requester = event.get("requester")
     approver = event.get("approver")
-
+    commit_action = event.get("commit_action") or os.environ.get("COMMIT_ACTION", "finalize")
     submission_id = "SUB-" + hashlib.sha256(
-        ("%s|%s" % (icsr_id, approver)).encode("utf-8")
-    ).hexdigest()[:12].upper()
+        ("%s|%s" % (case_id, approver)).encode("utf-8")).hexdigest()[:12].upper()
 
-    try:
-        rec = {
-            "audit_id": hashlib.sha256(
-                ("%s|finalize|COMMITTED|%s|%s" % (icsr_id, requester, approver)).encode("utf-8")
-            ).hexdigest(),
-            "icsr_id": icsr_id, "action": "finalize_submission", "phase": "COMMITTED",
-            "actor": approver, "requester": requester, "submission_id": submission_id,
-            "recorded_at": int(time.time()), "source": "pv-finalize",
-        }
-        boto3.resource("dynamodb", region_name=region).Table(AUDIT_TABLE).put_item(
-            Item=rec, ConditionExpression="attribute_not_exists(audit_id)")
-    except ClientError:
-        pass  # committed audit is idempotent; a duplicate is harmless
+    res = evidence.record_event({
+        "case_id": case_id, "action": commit_action, "phase": "COMMITTED", "actor": approver,
+        "deidentified": True,
+        "payload": {"requester": requester, "approver": approver, "submission_id": submission_id},
+    }, context, source=os.environ.get("SOURCE", "finalize"))
 
-    return {"committed": True, "submission_id": submission_id, "icsr_id": icsr_id,
-            "requester": requester, "approver": approver}
+    committed = bool(res.get("stored")) or "already recorded" in (res.get("reason") or "")
+    out = {"committed": committed, "submission_id": submission_id, "case_id": case_id,
+           "requester": requester, "approver": approver,
+           "evidence": {k: res.get(k) for k in ("audit_id", "chain_hash", "seq", "worm", "stored", "reason", "error")}}
+    if not committed:
+        out["error"] = res.get("error", "the COMMITTED evidence record could not be written")
+    return out
