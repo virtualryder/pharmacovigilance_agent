@@ -93,6 +93,9 @@ bash lib/runtime/_obs_setup.sh  agents/pharmacovigilance
 bash lib/runtime/_configure.sh  agents/pharmacovigilance
 bash lib/runtime/_launch.sh     agents/pharmacovigilance
 bash lib/runtime/_invoke.sh     agents/pharmacovigilance pv_reviewer   # or: bash invoke_demo.sh (with sample data)
+# Optional depth add-on — the governed OAuth connector (real outbound auth via AgentCore Identity, no stored secret):
+bash lib/connector/deploy_connector.sh agents/pharmacovigilance   # mock OAuth SoR (MOCK-Argus-SafetyDB) + Identity provider + verify_source
+bash lib/connector/prove_connector.sh  agents/pharmacovigilance   # proves OAuth + RS256/JWKS signature check + no secret + deny-by-default
 bash lib/engine/destroy.sh agents/pharmacovigilance   # zero-residual teardown (identity preserved)
 ```
 
@@ -110,11 +113,12 @@ Region/account resolve dynamically.
 lib/engine/     manifest-driven engine: render.py + deploy/demo/redteam/destroy + deploy_identity + signoff.asl.tmpl
 lib/controls/   shared control tools: mask_pii, write_audit, request/approve/finalize sign-off, mcp_client
 lib/runtime/    generic Strands agent on AgentCore Runtime (agent.py + Dockerfile + toolkit helpers)
+lib/connector/  reusable governed OAuth connector: verify_source (token via AgentCore Identity, no stored secret) + deploy/prove scripts + RS256/JWKS-verified mock SoR
 agents/pharmacovigilance/
                 manifest.yaml (single source of truth) + tools/ (intake_icsr, openfda_lookup,
                 assess_seriousness, detect_duplicate, record_causality, pv_core) + demo_extra.sh
 policies/       the six Cedar policies (rendered from the manifest), human-readable + a README
-docs/           architecture note + Word/PowerPoint guides (regulatory-adherence, SA runbook, maintenance, decks)
+docs/           architecture note + Word/PowerPoint guides (regulatory-adherence, SA runbook, maintenance, depth-evidence, cost/latency one-pager, decks)
 ```
 
 ## Honesty boundary
@@ -124,8 +128,7 @@ human-gate workflow, the WORM audit design, the seriousness rules engine, the li
 the IaC, the tests. The adopter owns: IdP federation and reviewer role mapping; validated connectors to
 the safety system of record (Argus/ArisG/E2B gateway); licensed MedDRA/WHODrug coding; the authoritative
 market-specific reporting rules and their regulatory review; computer-system validation (CSV/CSA); and
-production authorization to operate. `meddra_code`, `whodrug_code`, and safety-system connectors ship as
-labeled stubs.
+production authorization to operate. `meddra_code` and `whodrug_code` remain licensed-dictionary stubs, and connectors to the production safety system of record (Argus/ArisG/E2B gateway) remain adopter work. The repo does ship a **real** governed OAuth connector — `verify_source` authenticates to a mock safety database via AgentCore Identity (no stored secret) and the SoR verifies the token's RS256 signature against the Cognito JWKS — as the reference pattern.
 
 ## License
 
