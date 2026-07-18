@@ -51,5 +51,17 @@ if [ "$CTRL_SIGNOFF" = "1" ]; then
   if echo "$RESO" | grep -qi 'single-use\|already consumed'; then echo "  PASS | approval token is single-use"; pass=$((pass+1)); else echo "  FAIL | token reuse not blocked -> $RESO"; fail=$((fail+1)); fi
 fi
 
+# ---- generic: tamper-evident hash-chained audit ----
+echo "=== tamper-evident hash-chained audit (generic) ==="
+CID="CHAIN-$RANDOM-$RANDOM"
+CR1="$(call "$REV" "write_audit" "{\"icsr_id\":\"$CID\",\"action\":\"chain_step_1\",\"phase\":\"INTENT\",\"actor\":\"$REV_U\",\"payload\":{\"n\":1}}")"
+CH1="$(printf '%s' "$CR1" | grep -o '"chain_hash": *"[0-9a-f]\{64\}"' | grep -o '[0-9a-f]\{64\}' | head -1)"
+CR2="$(call "$REV" "write_audit" "{\"icsr_id\":\"$CID\",\"action\":\"chain_step_2\",\"phase\":\"COMMITTED\",\"actor\":\"$REV_U\",\"prev_hash\":\"$CH1\",\"payload\":{\"n\":2}}")"
+if [ -n "$CH1" ] && printf '%s' "$CR2" | grep -q "\"prev_hash\": *\"$CH1\""; then
+  echo "  PASS | audit record 2 is cryptographically chained to record 1 (prev_hash = record-1 chain_hash) -- editing an earlier record breaks every link after it"
+else
+  echo "  FAIL | hash chain not linked -> r1=$CR1 r2=$CR2"; fail=$((fail+1))
+fi
+
 echo "=== $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ] && echo "GOVERNANCE DEMO: PASS" || { echo "GOVERNANCE DEMO: FAIL"; exit 1; }

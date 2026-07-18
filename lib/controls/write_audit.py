@@ -5,20 +5,61 @@ import os
 import boto3
 from botocore.exceptions import ClientError, BotoCoreError
 
-# write_audit — append a tamper-evident audit record for the PV ICSR workflow.
+# write_audit — append a TAMPER-EVIDENT, HASH-CHAINED audit record for the governed workflow.
 #
-# Two stores, both write-once:
-#   1. DynamoDB `pv-audit`  — authoritative append-only ledger. Conditional PutItem on
-#      attribute_not_exists(audit_id) makes a record un-overwritable. audit_id is the
-#      SHA-256 of the logical record (excluding timestamp), so replaying the same logical
-#      event collides and is rejected -> that IS the append-only proof.
-#   2. S3 `pv-audit-worm-<acct>-<region>` — Object Lock (GOVERNANCE) WORM copy of the record.
+# Two write-once stores:
+#   1. DynamoDB `<p>-audit`  — authoritative append-only ledger. Conditional PutItem on
+#      attribute_not_exists(audit_id) makes a record un-overwritable. audit_id is the SHA-256 of the
+#      logical record (excluding timestamp), so replaying the same logical event collides and is
+#      rejected -> that IS the append-only proof.
+#   2. S3 `<p>-audit-worm-<acct>-<region>` — Object Lock (GOVERNANCE) WORM copy of the record.
 #
-# The tool's execution role is granted PutItem / PutObject only, and is explicitly DENIED
-# DeleteItem/UpdateItem and DeleteObject/BypassGovernanceRetention (see deploy_spine.sh).
-# So the principal that writes evidence cannot alter or destroy it. That is the whole point.
+# HASH CHAIN (tamper-evidence by construction). Beyond "you can't overwrite a record", each record is
+# cryptographically linked to the one before it for the same case:
+#     entry_hash = SHA-256(canonical record content, excluding the 3 chain fields)
+#     chain_hash = SHA-256(prev_hash + ":" + entry_hash)
+# The caller threads the previous record's chain_hash back in as `prev_hash` (the first record of a case
+# uses GENESIS). Altering ANY earlier record changes its entry_hash -> its chain_hash -> and breaks the
+# prev_hash link of every record after it. Because the store is append-only + WORM (the writer role is
+# denied Delete/Update and BypassGovernanceRetention), a tampered ledger cannot be silently re-chained.
+# verify_chain.py replays the links and reports INTACT or the first broken record. This makes the audit
+# trail court-defensible: not just un-deletable, but provably un-editable.
+#
+# The tool's execution role is granted PutItem / PutObject only (no reads, no deletes) — so this stays
+# a pure append. Threading prev_hash keeps it stateless; in the sequential governed workflow there is one
+# writer per case, so no fork. (Auto-discovering the tip would need read access + fork handling; that is
+# an adopter hardening, called out in the docs.)
 
 TABLE = os.environ.get("AUDIT_TABLE", "pv-audit")
+
+GENESIS = "GENESIS"
+_CHAIN_FIELDS = ("prev_hash", "entry_hash", "chain_hash")
+
+
+def _canonical(obj):
+    return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def entry_hash(record):
+    """SHA-256 over the record's content, excluding the three chain fields. Pure; no AWS."""
+    body = {k: v for k, v in record.items() if k not in _CHAIN_FIELDS}
+    return hashlib.sha256(_canonical(body).encode("utf-8")).hexdigest()
+
+
+def chain_hash(prev_hash, eh):
+    """Link this record's entry_hash to the previous record's chain_hash. Pure; no AWS."""
+    return hashlib.sha256(((prev_hash or GENESIS) + ":" + eh).encode("utf-8")).hexdigest()
+
+
+def chain_record(record, prev_hash):
+    """Return a copy of `record` with prev_hash / entry_hash / chain_hash set. Pure; no AWS."""
+    prev = prev_hash or GENESIS
+    eh = entry_hash(record)
+    out = dict(record)
+    out["prev_hash"] = prev
+    out["entry_hash"] = eh
+    out["chain_hash"] = chain_hash(prev, eh)
+    return out
 
 
 def _coerce(event):
@@ -62,6 +103,8 @@ def handler(event, context):
         "recorded_at": int(time.time()),
         "source": "pv-write_audit",
     })
+    # Hash-chain link: caller threads the previous record's chain_hash as prev_hash (GENESIS if first).
+    record = chain_record(record, e.get("prev_hash"))
 
     # 1) Append-only DynamoDB (authoritative). Conditional put = un-overwritable.
     try:
@@ -69,7 +112,7 @@ def handler(event, context):
         ddb.put_item(Item=record, ConditionExpression="attribute_not_exists(audit_id)")
     except ClientError as exc:
         if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
-            return {"stored": False, "audit_id": audit_id,
+            return {"stored": False, "audit_id": audit_id, "chain_hash": record["chain_hash"],
                     "reason": "append-only: this exact record is already recorded (immutable)"}
         return {"stored": False, "audit_id": audit_id,
                 "error": "audit ledger write failed: " + exc.response.get("Error", {}).get("Code", "?")}
@@ -90,6 +133,9 @@ def handler(event, context):
     except (ClientError, BotoCoreError):
         worm = False
 
-    return {"stored": True, "worm": worm, "audit_id": audit_id,
-            "table": TABLE, "bucket": bucket, "key": key,
-            "payload_sha256": payload_sha, "phase": logical["phase"]}
+    # proof fields FIRST — the MCP client truncates tool output to ~220 chars, so chain_hash / prev_hash
+    # must fit early enough for the governance demo to read them.
+    return {"stored": True, "worm": worm, "chain_hash": record["chain_hash"],
+            "prev_hash": record["prev_hash"], "phase": logical["phase"], "audit_id": audit_id,
+            "entry_hash": record["entry_hash"], "payload_sha256": payload_sha,
+            "table": TABLE, "bucket": bucket, "key": key}
