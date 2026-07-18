@@ -1,0 +1,65 @@
+# End-to-end deploy test — OPT-IN, manual only. Stands up the governance spine in a real AWS
+# account, proves it live with the demo (Cedar in ENFORCE), and tears it down. NEVER runs on push.
+#
+# One-time setup in the target (sandbox) AWS account + this repo's settings:
+#   * Enable the Anthropic Claude models in Amazon Bedrock (us-east-1).
+#   * Auth — pick ONE:
+#       OIDC (recommended): create a GitHub OIDC IAM role with admin-in-sandbox perms and set the
+#         repository VARIABLE  AWS_ROLE_ARN  to its ARN (Settings -> Secrets and variables -> Actions -> Variables).
+#       Static keys: set repository SECRETS  AWS_ACCESS_KEY_ID  and  AWS_SECRET_ACCESS_KEY.
+#   * (housing only, optional) set secret  HUD_API_TOKEN  to exercise the live HUD lookup; without it the
+#     demo still passes (the live call degrades to a WARN and falls back).
+#
+# Run it: Actions -> "e2e-deploy" -> Run workflow -> type "deploy" to confirm. Costs a few cents per run.
+name: e2e-deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy" to confirm a live deploy -> demo -> destroy in the configured AWS account'
+        required: true
+        default: ''
+
+concurrency:
+  group: e2e-pharmacovigilance
+  cancel-in-progress: false
+
+permissions:
+  id-token: write   # for AWS OIDC (harmless if you use static keys)
+  contents: read
+
+jobs:
+  e2e:
+    if: ${{ github.event.inputs.confirm == 'deploy' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      AGENT: agents/pharmacovigilance
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install render dependency
+        run: pip install pyyaml
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-east-1
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - name: Who am I
+        run: aws sts get-caller-identity
+      - name: Pre-clean any stale spine (best effort)
+        run: bash lib/engine/destroy.sh "$AGENT" || true
+      - name: Deploy the governance spine (flips to ENFORCE)
+        run: bash lib/engine/deploy.sh "$AGENT"
+      - name: Prove governance live (demo, Cedar ENFORCE)
+        run: bash lib/engine/demo.sh "$AGENT"
+      - name: Teardown (always, even on failure)
+        if: always()
+        run: bash lib/engine/destroy.sh "$AGENT" || true
