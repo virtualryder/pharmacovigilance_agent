@@ -14,7 +14,7 @@ const body = [
   bullet([bold("Identity stack "), "— a stable Amazon Cognito user pool, app client, and test users. Long-lived; not touched by spine redeploys."]),
   bullet([bold("Governance spine "), "— the Cedar policy engine, AgentCore Gateway, tool Lambdas, Bedrock Guardrail, WORM audit stores, and the Step Functions human sign-off gate. Reproducible; stood up and torn down as a unit."]),
   bullet([bold("Runtime agent "), "— the generic Strands agent, containerized and deployed to AgentCore Runtime with a Cognito JWT inbound authorizer; its workflow prompt is rendered from the manifest."]),
-  P(["The whole spine deploys with one command, proves itself with a 30-check governance demo (and a 7/7 red-team harness), and tears down with zero residual. Everything is driven from ", code("agents/pharmacovigilance/manifest.yaml"), " — the engine, control library, and runtime are shared across agents."]),
+  P(["The whole spine deploys with one command, proves itself with a 32-check governance demo (and a 7/7 red-team harness), and tears down with zero residual. Everything is driven from ", code("agents/pharmacovigilance/manifest.yaml"), " — the engine, control library, and runtime are shared across agents."]),
   callout("Honesty boundary", [["This is an accelerator, not a validated or production-certified system. Authorization to operate, computer-system validation (CSV/CSA), IdP federation, validated connectors to the safety system of record (Argus / ArisG / E2B gateway), licensed MedDRA/WHODrug dictionaries, and regulatory review of narratives and reporting rules are sponsor responsibilities. See the Regulatory-Adherence Guide."]], G.colors.AMBER, "FBF3E7"),
 
   H1("2. Prerequisites"),
@@ -70,8 +70,8 @@ const body = [
   callout("Run cycles serialized", [["Do not run two spine deploys concurrently — overlapping runs collide on the policy-engine name. Deploy takes roughly three to four minutes end to end. Deploy from a path without spaces (see §8)."]], G.colors.TEAL),
 
   P([bold("Tamper-evident audit. "), "The demo also proves the audit ledger is ", bold("hash-chained"), ": each record embeds the prior record’s hash (", code("chain_hash = SHA-256(prev_hash + entry_hash)"), "), so editing, reordering, or deleting any record breaks every link after it — on top of the append-only + Object-Lock guarantees. ", code("lib/controls/verify_chain.py"), " replays the links and reports INTACT or the first broken record."]),
-  H2("Step 3 — Prove the governance (30 checks)"),
-  P("Mints safety-reviewer and outsider tokens and exercises the full governed workflow live, in ENFORCE mode. Expect 30 passed / 0 failed."),
+  H2("Step 3 — Prove the governance (32 checks)"),
+  P("Mints safety-reviewer and outsider tokens and exercises the full governed workflow live, in ENFORCE mode. Expect 32 passed / 0 failed."),
   ...codeBlock(["bash lib/engine/demo.sh agents/pharmacovigilance", "bash lib/engine/redteam.sh agents/pharmacovigilance   # adversarial: governance holds under attack (7/7)"]),
   P("The demo proves deny-by-default (safety reviewer ALLOW / outsider DENY), the mask-before-assess, mask-before-causality, and mask-before-draft forbids and no-self-submit / no-self-causality-commit (each denial names the exact Cedar policy), real PHI masking (name/DOB/address redaction), the live openFDA FAERS background lookup (aggregate, non-PHI), the deterministic seriousness + reporting-clock determination (EXPEDITED 15-day / PERIODIC / ROUTINE per ICH E2B(R3) / 21 CFR 314.80), a real Bedrock CIOMS narrative through the Guardrail, the immutable WORM audit (write-once + duplicate rejection), and the human sign-off gate (separation of duties + single-use token)."),
   P([bold("Deeper caseload workflows (step two). "), "The demo also exercises the deeper workflows, each a governed tool with its own Cedar control: ", code("detect_duplicate"), " (deterministic duplicate-ICSR detection that HOLDs a suspected duplicate so a case isn't double-reported), ", code("record_causality"), " (PREPARE a documented causality/reportability determination — the highest-risk discretionary judgment — requiring a written rationale and approval by a DIFFERENT senior safety physician; fail-closed on un-masked input), and ", code("commit_causality"), " — a consequential, senior-human-only action the agent can never take (forbidden by ", code("no_self_causality_commit"), ", mirroring ", code("no_self_submit"), "). The pattern is the point: every new high-risk action is a tool body plus its own deny-by-default forbid."]),
@@ -114,7 +114,7 @@ const body = [
   H1("6. Validation checklist"),
   bullet([code("deploy_identity.sh"), " → identity-state.env written; pool visible in Cognito."]),
   bullet([code("deploy.sh"), " → ends with a ", code("Gateway URL: … (mode ENFORCE)"), " line and ", code("spine-state.env"), " written."]),
-  bullet([code("demo.sh"), " → ", code("30 passed, 0 failed"), " / ", code("GOVERNANCE DEMO: PASS"), "; ", code("redteam.sh"), " → ", code("7/7"), "."]),
+  bullet([code("demo.sh"), " → ", code("32 passed, 0 failed"), " / ", code("GOVERNANCE DEMO: PASS"), "; ", code("redteam.sh"), " → ", code("7/7"), "."]),
   bullet(["SSM parameter ", code("/pv-pharmacovigilance/gateway-url"), " exists and matches the live gateway."]),
   bullet(["Runtime invoke: pv_reviewer → workflow summary; outsider → ACCESS DENIED."]),
   bullet(["CloudWatch log group ", code("/aws/bedrock-agentcore/runtimes/pv_runtime_agent-*-DEFAULT"), " shows per-step, identity-tagged logs."]),

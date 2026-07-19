@@ -105,7 +105,7 @@ The shape is the point: a group-scoped permit, `mask_before_*` forbids that enfo
 3. **Runtime + Identity** — the generic Strands agent onto AgentCore Runtime; Cognito inbound JWT wired to the Cedar principal.
 4. **Human sign-off gate** — Step Functions `waitForTaskToken` wired to `request_signoff` and `finalize_submission`.
 5. **WORM audit + Observability.**
-6. **Manifest + validate** — the whole agent is one manifest; deploy; end-to-end run (Cedar allow/deny, live openFDA background, masking, seriousness + reporting clock, real Bedrock narrative, tamper-evident audit) + negative tests + a red-team harness; teardown. Proven live: **30/30 governance checks in ENFORCE** and **7/7 red-team ("governance holds under attack")**.
+6. **Manifest + validate** — the whole agent is one manifest; deploy; end-to-end run (Cedar allow/deny, live openFDA background, masking, seriousness + reporting clock, real Bedrock narrative, tamper-evident audit) + negative tests + a red-team harness; teardown. Proven live: **32/32 governance checks in ENFORCE** and **7/7 red-team ("governance holds under attack")**.
 
 ## 9. What's ours vs. the customer's (honesty boundary)
 
