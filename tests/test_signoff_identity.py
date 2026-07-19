@@ -10,6 +10,8 @@ import pathlib
 import sys
 import time
 
+import pytest
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CONTROLS = ROOT / "lib" / "controls"
 if str(CONTROLS) not in sys.path:
@@ -20,6 +22,14 @@ os.environ.update({"VERIFY_SIGNATURE": "false", "CLIENT_ID": "test-client",
                    "REVIEWER_GROUP": "pv_reviewer", "COGNITO_ISS": ISS})
 
 import identity  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _claims_only_signature():
+    # identity.verify_access_token reads VERIFY_SIGNATURE at call time; these fixtures use
+    # unsigned tokens, so force claims-only per test regardless of env leaked by other modules.
+    os.environ["VERIFY_SIGNATURE"] = "false"
+    yield
 
 
 def _b64url(obj):

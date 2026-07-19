@@ -8,6 +8,8 @@ import json
 import os
 import pathlib
 
+import pytest
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOR = ROOT / "lib" / "connector" / "sor_api.py"
 
@@ -21,6 +23,22 @@ CLIENT = "fixture-client"
 SCOPE = "px-sor/read"
 VALID = "eyJhbGciOiAiUlMyNTYiLCAia2lkIjogInNvci10ZXN0LWtpZCIsICJ0eXAiOiAiSldUIn0.eyJpc3MiOiAiaHR0cHM6Ly9jb2duaXRvLWlkcC51cy1lYXN0LTEuYW1hem9uYXdzLmNvbS91cy1lYXN0LTFfRklYVFVSRSIsICJ0b2tlbl91c2UiOiAiYWNjZXNzIiwgImNsaWVudF9pZCI6ICJmaXh0dXJlLWNsaWVudCIsICJzY29wZSI6ICJweC1zb3IvcmVhZCIsICJleHAiOiA5OTk5OTk5OTk5fQ.CkchbPXU_Be4adiFwlUHL7lorVyyepKO25oO2EJNRKDhA4W-yPSk0uToI7W2FytYLPsuv0bnHLxa_CFfLt46NT_iyWjU1NQXBV1o4bmJ6ufydiNu_D9JaLvHFTGVkDBZ3MqMkiChvrhgGA2P108yNFlCGferd_MCucPsrbEmOkZtS4m5-CgLXM5kuZfgAmX35jBE4K9Qj-KGOye5nYKRQyiJfBg5JfjIkXtPpqCbz5T8ymwMXuh6ooXYFbPBtjlI-8pwkCSRcEl0RH39m-tOTMH5mFXP-3bOb43pokzrhPUvEBD-JFEzgy3DU2MPRoTOZ4wPSp8lJR6F7YY-7dUSbQ"
 TAMPERED = "eyJhbGciOiAiUlMyNTYiLCAia2lkIjogInNvci10ZXN0LWtpZCIsICJ0eXAiOiAiSldUIn0.eyJpc3MiOiAiaHR0cHM6Ly9jb2duaXRvLWlkcC51cy1lYXN0LTEuYW1hem9uYXdzLmNvbS91cy1lYXN0LTFfRklYVFVSRSIsICJ0b2tlbl91c2UiOiAiYWNjZXNzIiwgImNsaWVudF9pZCI6ICJmaXh0dXJlLWNsaWVudCIsICJzY29wZSI6ICJweC1zb3IvYWRtaW4iLCAiZXhwIjogOTk5OTk5OTk5OX0.CkchbPXU_Be4adiFwlUHL7lorVyyepKO25oO2EJNRKDhA4W-yPSk0uToI7W2FytYLPsuv0bnHLxa_CFfLt46NT_iyWjU1NQXBV1o4bmJ6ufydiNu_D9JaLvHFTGVkDBZ3MqMkiChvrhgGA2P108yNFlCGferd_MCucPsrbEmOkZtS4m5-CgLXM5kuZfgAmX35jBE4K9Qj-KGOye5nYKRQyiJfBg5JfjIkXtPpqCbz5T8ymwMXuh6ooXYFbPBtjlI-8pwkCSRcEl0RH39m-tOTMH5mFXP-3bOb43pokzrhPUvEBD-JFEzgy3DU2MPRoTOZ4wPSp8lJR6F7YY-7dUSbQ"
+
+
+@pytest.fixture(autouse=True)
+def _verify_signature_on():
+    # sor_api reads VERIFY_SIGNATURE at import time; force it ON for this file so the
+    # RS256/JWKS path is exercised regardless of env another test module leaked at
+    # collection time, and restore the prior value afterwards (order-independent).
+    prev = os.environ.get("VERIFY_SIGNATURE")
+    os.environ["VERIFY_SIGNATURE"] = "true"
+    try:
+        yield
+    finally:
+        if prev is None:
+            os.environ.pop("VERIFY_SIGNATURE", None)
+        else:
+            os.environ["VERIFY_SIGNATURE"] = prev
 
 
 def _load():
