@@ -87,7 +87,8 @@ deploy_fn(){ # $1 fn  $2 src.py  [$3 role]
   cp "$2" lambda_function.py
   _shared="$(dirname "$2")/evidence.py"; if [ -f "$_shared" ]; then cp "$_shared" evidence.py; else rm -f evidence.py; fi
   _prov="$LIB/controls/provenance.py"; if [ -f "$_prov" ]; then cp "$_prov" provenance.py; else rm -f provenance.py; fi
-  python -c "import zipfile,os; z=zipfile.ZipFile('$1.zip','w',zipfile.ZIP_DEFLATED); z.write('lambda_function.py'); (os.path.exists('evidence.py') and z.write('evidence.py')); (os.path.exists('provenance.py') and z.write('provenance.py')); z.close()"
+  _idn="$LIB/controls/identity.py"; if [ -f "$_idn" ]; then cp "$_idn" identity.py; else rm -f identity.py; fi
+  python -c "import zipfile,os; z=zipfile.ZipFile('$1.zip','w',zipfile.ZIP_DEFLATED); z.write('lambda_function.py'); (os.path.exists('evidence.py') and z.write('evidence.py')); (os.path.exists('provenance.py') and z.write('provenance.py')); (os.path.exists('identity.py') and z.write('identity.py')); z.close()"
   if aws lambda get-function --function-name "$1" --region "$REGION" >/dev/null 2>&1; then
     aws lambda update-function-code --function-name "$1" --zip-file "fileb://$1.zip" --region "$REGION" >/dev/null
   else
@@ -154,7 +155,11 @@ if [ -z "$PROV_SECRET" ] || [ "$PROV_SECRET" = "None" ]; then
   aws ssm put-parameter --name "$PROV_PARAM" --type SecureString --value "$PROV_SECRET" --overwrite --region "$REGION" >/dev/null 2>&1 || true
   log "generated provenance signing secret -> SSM $PROV_PARAM"
 fi
-CTRL_ENV="Variables={AUDIT_TABLE=$AUDIT_TABLE,AUDIT_BUCKET=$WORM_BUCKET,PENDING_TABLE=$PENDING_TABLE,SM_NAME=$SM_NAME,DRAFT_MODEL_ID=$DRAFT_MODEL_ID,SOURCE=${PREFIX}-evidence,TENANT_ID=$PREFIX,MODEL_ID=$DRAFT_MODEL_ID,POLICY_VERSION=v1,RULE_VERSION=v1,DEPLOYMENT_VERSION=v1,PROVENANCE_SECRET=$PROV_SECRET}"
+# P0-5: the sign-off gate derives requester/approver identity from a validated Cognito access token
+# (identity.py). The verifier needs the trusted issuer, the expected app client, and the reviewer group —
+# injected here so request_signoff/approve reject a spoofed identity and enforce SoD on verified usernames.
+COGNITO_ISS="https://cognito-idp.${REGION}.amazonaws.com/${POOL_ID}"
+CTRL_ENV="Variables={AUDIT_TABLE=$AUDIT_TABLE,AUDIT_BUCKET=$WORM_BUCKET,PENDING_TABLE=$PENDING_TABLE,SM_NAME=$SM_NAME,DRAFT_MODEL_ID=$DRAFT_MODEL_ID,SOURCE=${PREFIX}-evidence,TENANT_ID=$PREFIX,MODEL_ID=$DRAFT_MODEL_ID,POLICY_VERSION=v1,RULE_VERSION=v1,DEPLOYMENT_VERSION=v1,PROVENANCE_SECRET=$PROV_SECRET,COGNITO_ISS=$COGNITO_ISS,CLIENT_ID=$CLIENT_ID,REVIEWER_GROUP=$REVIEWER_GROUP}"
 wire_env(){ for i in 1 2 3 4 5 6; do aws lambda update-function-configuration --function-name "$1" --environment "$CTRL_ENV" --region "$REGION" >/dev/null 2>&1 && { log "wired resource env into $1"; return; }; sleep 4; done; }
 while IFS=$'\t' read -r target lambda handler kind guarded; do
   [ -z "$target" ] && continue

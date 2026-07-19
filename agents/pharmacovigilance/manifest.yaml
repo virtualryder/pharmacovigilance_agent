@@ -167,8 +167,8 @@ tools:
         description: "Request qualified-person sign-off before submitting an ICSR; starts a separation-of-duties approval workflow. The agent can never submit directly."
         input:
           icsr_id: { type: string, description: "Case/record id." }
-          requester: { type: string, description: "The safety reviewer requesting the submission." }
-        required: [icsr_id, requester]
+          access_token: { type: string, description: "The requester's validated Cognito access token; the requester identity is derived from it (P0-5), never from a name field." }
+        required: [icsr_id, access_token]
 
 policies:
   - { name: pv_reviewer_permit,          kind: permit, role_group: pv_reviewer }
