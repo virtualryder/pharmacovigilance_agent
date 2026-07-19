@@ -31,7 +31,12 @@ fi
 
 # ---- 1. IAM (create-or-reuse) ----
 printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"bedrock-agentcore.amazonaws.com"},"Action":"sts:AssumeRole"}]}' > gw-trust.json
-printf '%s' '{"Version":"2012-10-17","Statement":[{"Sid":"AC","Effect":"Allow","Action":"bedrock-agentcore:*","Resource":"*"},{"Sid":"L","Effect":"Allow","Action":"lambda:InvokeFunction","Resource":"arn:aws:lambda:'"$REGION"':'"$ACC"':function:'"$PREFIX"'-*"}]}' > gw-perms.json
+# P0-4 least-privilege: the old policy granted bedrock-agentcore:* on Resource "*" (any AgentCore
+# resource in the account). The gateway role actually needs to (a) read/evaluate its OWN policy engine
+# and gateway config (the service calls GetPolicyEngine with this role) and (b) invoke this agent's tool
+# Lambdas. Scope the AgentCore actions to THIS account/region's policy-engine and gateway resources (no
+# longer "*"), and scope lambda:InvokeFunction to this agent's PREFIX-* functions.
+printf '%s' '{"Version":"2012-10-17","Statement":[{"Sid":"AgentCoreSelf","Effect":"Allow","Action":"bedrock-agentcore:*","Resource":["arn:aws:bedrock-agentcore:'"$REGION"':'"$ACC"':policy-engine/*","arn:aws:bedrock-agentcore:'"$REGION"':'"$ACC"':gateway/*"]},{"Sid":"InvokeTools","Effect":"Allow","Action":"lambda:InvokeFunction","Resource":"arn:aws:lambda:'"$REGION"':'"$ACC"':function:'"$PREFIX"'-*"}]}' > gw-perms.json
 printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}' > lam-trust.json
 aws iam get-role --role-name "$GW_ROLE" >/dev/null 2>&1 || { aws iam create-role --role-name "$GW_ROLE" --assume-role-policy-document file://gw-trust.json >/dev/null; log "created role $GW_ROLE"; }
 aws iam put-role-policy --role-name "$GW_ROLE" --policy-name "${PREFIX}-gw-perms" --policy-document file://gw-perms.json
@@ -42,8 +47,12 @@ if ! aws iam get-role --role-name "$TOOL_ROLE" >/dev/null 2>&1; then
   log "created role $TOOL_ROLE"
 fi
 TOOL_ROLE_ARN="arn:aws:iam::$ACC:role/$TOOL_ROLE"
-# Tool perms (superset; harmless if a control is disabled). Names come from the manifest.
-printf '%s' '{"Version":"2012-10-17","Statement":[{"Sid":"NLP","Effect":"Allow","Action":["comprehendmedical:DetectPHI","comprehend:DetectPiiEntities"],"Resource":"*"},{"Sid":"BedrockDraft","Effect":"Allow","Action":["bedrock:InvokeModel","bedrock:InvokeModelWithResponseStream","bedrock:ApplyGuardrail"],"Resource":"*"},{"Sid":"AuditLedgerAppend","Effect":"Allow","Action":["dynamodb:PutItem","dynamodb:GetItem"],"Resource":"arn:aws:dynamodb:'"$REGION"':'"$ACC"':table/'"$AUDIT_TABLE"'"},{"Sid":"AuditWormPut","Effect":"Allow","Action":["s3:PutObject"],"Resource":"arn:aws:s3:::'"$WORM_BUCKET"'/*"},{"Sid":"SignoffStart","Effect":"Allow","Action":["states:StartExecution"],"Resource":"arn:aws:states:'"$REGION"':'"$ACC"':stateMachine:'"$SM_NAME"'"},{"Sid":"AuditTamperDeny","Effect":"Deny","Action":["dynamodb:DeleteItem","dynamodb:UpdateItem","s3:DeleteObject","s3:DeleteObjectVersion","s3:BypassGovernanceRetention","s3:PutObjectRetention","s3:PutObjectLegalHold"],"Resource":"*"}]}' > tool-perms.json
+# Tool perms — P0-4 least-privilege. Every ALLOW is scoped to a specific resource ARN except the two
+# Comprehend detect actions, which AWS only supports at Resource "*" (no resource-level ARNs exist for
+# them). Bedrock is scoped to Claude inference profiles / foundation models + this account's guardrails
+# (not "*"); DynamoDB/S3/States are scoped to THIS agent's audit table, WORM bucket, and state machine.
+# The tamper Deny stays broad on purpose (a deny should not be narrow).
+printf '%s' '{"Version":"2012-10-17","Statement":[{"Sid":"NLP","Effect":"Allow","Action":["comprehendmedical:DetectPHI","comprehend:DetectPiiEntities"],"Resource":"*"},{"Sid":"BedrockInvoke","Effect":"Allow","Action":["bedrock:InvokeModel","bedrock:InvokeModelWithResponseStream"],"Resource":["arn:aws:bedrock:*:'"$ACC"':inference-profile/*","arn:aws:bedrock:*::foundation-model/anthropic.claude-*"]},{"Sid":"BedrockGuardrail","Effect":"Allow","Action":["bedrock:ApplyGuardrail"],"Resource":"arn:aws:bedrock:'"$REGION"':'"$ACC"':guardrail/*"},{"Sid":"AuditLedgerAppend","Effect":"Allow","Action":["dynamodb:PutItem","dynamodb:GetItem"],"Resource":"arn:aws:dynamodb:'"$REGION"':'"$ACC"':table/'"$AUDIT_TABLE"'"},{"Sid":"AuditWormPut","Effect":"Allow","Action":["s3:PutObject"],"Resource":"arn:aws:s3:::'"$WORM_BUCKET"'/*"},{"Sid":"SignoffStart","Effect":"Allow","Action":["states:StartExecution"],"Resource":"arn:aws:states:'"$REGION"':'"$ACC"':stateMachine:'"$SM_NAME"'"},{"Sid":"AuditTamperDeny","Effect":"Deny","Action":["dynamodb:DeleteItem","dynamodb:UpdateItem","s3:DeleteObject","s3:DeleteObjectVersion","s3:BypassGovernanceRetention","s3:PutObjectRetention","s3:PutObjectLegalHold"],"Resource":"*"}]}' > tool-perms.json
 aws iam put-role-policy --role-name "$TOOL_ROLE" --policy-name "${PREFIX}-tool-perms" --policy-document file://tool-perms.json
 sleep 10
 
