@@ -1,7 +1,7 @@
 # Governed Hero Agents on Amazon Bedrock AgentCore — Cost & Latency
 
 **One fully-governed transaction ≈ $0.09**, of which **~94% is model inference**. The entire
-governance apparatus — fail-closed PII/PHI masking, Cedar authorization on every tool call, append-only, tamper-evident
+governance apparatus — fail-closed PII/PHI masking, Cedar authorization on every tool call, immutable
 WORM audit, the separation-of-duties human gate, live authoritative-data lookup, and full
 OpenTelemetry/X-Ray observability — adds **under one cent** per transaction. Governance is not the cost;
 the LLM is. Figures are us-east-1 list price, measured against the deployed benefits, pharmacovigilance,

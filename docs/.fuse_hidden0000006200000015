@@ -37,4 +37,4 @@ Built from the reusable, prefix-parameterized `lib/connector` kit — the same c
 
 ## Why this matters
 
-The happy-path demo proves the controls work when everything cooperates. The runtime trace proves it **runs as an autonomous agent** (not a scripted sequence) and produces tamper-evident, hash-chained evidence, the red-team proves it **holds when the agent is adversarial**, and the connector proves it **authenticates to a real dependency without holding a secret**. This vertical carries the same depth as the flagship.
+The happy-path demo proves the controls work when everything cooperates. The runtime trace proves it **runs as an autonomous agent** (not a scripted sequence) and produces court-defensible evidence, the red-team proves it **holds when the agent is adversarial**, and the connector proves it **authenticates to a real dependency without holding a secret**. This vertical carries the same depth as the flagship.

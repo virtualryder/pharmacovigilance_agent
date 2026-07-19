@@ -28,7 +28,7 @@ AWS now ships, in Amazon Bedrock AgentCore, the governance primitives a regulate
 | Tracing / observability | Native | **AgentCore Observability** — OpenTelemetry spans per agent/tool step |
 | Fail-closed PHI de-identification | Build | `mask_pii` Gateway tool: Comprehend `DetectPiiEntities` (name, DOB, address, identifiers…), before model + before audit |
 | Human sign-off gate (separation of duties) | Build | Step Functions `waitForTaskToken` — bound, single-use approval; AgentCore has no native human gate |
-| Append-only, tamper-evident WORM audit (Part 11 / GxP evidence) | Build | Append-only DynamoDB + S3 Object Lock; Observability traces are for ops, not tamper-proof evidence |
+| Immutable WORM audit (Part 11 / GxP evidence) | Build | Append-only DynamoDB + S3 Object Lock; Observability traces are for ops, not tamper-proof evidence |
 
 ## 4. Target architecture (components)
 
@@ -45,7 +45,7 @@ AWS now ships, in Amazon Bedrock AgentCore, the governance primitives a regulate
 **Built alongside — the regulated last mile:**
 - **Fail-closed PHI de-identification:** the `mask_pii` tool de-identifies the adverse-event case (Amazon Comprehend `DetectPiiEntities` — name, DOB, address, identifiers, and more) before the model drafts and before anything is written to the audit. Fail-closed — if masking can't run, the call stops rather than exposing PHI. (The drug name is non-PHI, so `openfda_lookup` runs *before* masking.)
 - **Human sign-off gate (separation of duties):** `request_signoff` starts a Step Functions execution that pauses on `waitForTaskToken`; a *different* qualified person approves with a bound, single-use token. The agent cannot submit an ICSR itself.
-- **Append-only, tamper-evident WORM audit:** an append-only, tamper-evident record (append-only DynamoDB + S3 Object Lock) capturing `INTENT → COMMITTED` for the 21 CFR Part 11 / GxP evidence trail.
+- **Immutable WORM audit:** an append-only, tamper-evident record (append-only DynamoDB + S3 Object Lock) capturing `INTENT → COMMITTED` for the 21 CFR Part 11 / GxP evidence trail.
 
 ## 5. How one governed action flows
 
@@ -105,7 +105,7 @@ The shape is the point: a group-scoped permit, `mask_before_*` forbids that enfo
 3. **Runtime + Identity** — the generic Strands agent onto AgentCore Runtime; Cognito inbound JWT wired to the Cedar principal.
 4. **Human sign-off gate** — Step Functions `waitForTaskToken` wired to `request_signoff` and `finalize_submission`.
 5. **WORM audit + Observability.**
-6. **Manifest + validate** — the whole agent is one manifest; deploy; end-to-end run (Cedar allow/deny, live openFDA background, masking, seriousness + reporting clock, real Bedrock narrative, tamper-evident audit) + negative tests + a red-team harness; teardown. Proven live: **30/30 governance checks in ENFORCE** and **7/7 red-team ("governance holds under attack")**.
+6. **Manifest + validate** — the whole agent is one manifest; deploy; end-to-end run (Cedar allow/deny, live openFDA background, masking, seriousness + reporting clock, real Bedrock narrative, immutable audit) + negative tests + a red-team harness; teardown. Proven live: **30/30 governance checks in ENFORCE** and **7/7 red-team ("governance holds under attack")**.
 
 ## 9. What's ours vs. the customer's (honesty boundary)
 
@@ -116,6 +116,6 @@ The accelerator owns: the agent, the Cedar policies, the tools, the fail-closed 
 - **ICH E2B(R3) / EU GVP** (ICSR data elements, seriousness definition, case management) → `assess_seriousness` rules engine + `draft_narrative`; the **qualified-person determination** → the human gate.
 - **FDA 21 CFR 314.80 / 312.32** (postmarket 15-day and IND 7-/15-day expedited reporting) → the reporting-clock logic + the WORM record; `no_self_submit` keeps submission human-only.
 - **FDA 21 CFR Part 11 / GxP** (attributable, tamper-evident electronic records and signatures; computer-system validation) → append-only WORM audit + least-privilege Cedar + the single-use sign-off; CSV/CSA remains the sponsor's.
-- **HIPAA** (safeguarding PHI in the adverse-event case) → fail-closed `mask_pii` + least-privilege Cedar + tamper-evident audit + encryption.
+- **HIPAA** (safeguarding PHI in the adverse-event case) → fail-closed `mask_pii` + least-privilege Cedar + immutable audit + encryption.
 
 Each of these becomes a control-to-requirement line in the regulatory-adherence guide.

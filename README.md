@@ -64,7 +64,7 @@ JWT.
 `bash lib/engine/demo.sh agents/pharmacovigilance` exercises the full governed workflow against the
 deployed system with Cedar in **ENFORCE**: deny-by-default (reviewer ALLOW / outsider DENY), the live
 openFDA FAERS background lookup, fail-closed PHI masking, the mask-before forbids firing *by name*, the
-seriousness + reporting-clock determination, a real guarded Bedrock narrative, the immutable WORM audit
+seriousness + reporting-clock determination, a real guarded Bedrock narrative, the append-only, tamper-evident WORM audit
 (write-once + duplicate rejection), `no_self_submit`, and the human sign-off gate (separation of duties +
 single-use token).
 

@@ -99,7 +99,7 @@ high finding; CMK encryption verified on the evidence stores.
 
 ### P0-7 — Capability maturity matrix + language cleanup  ·  status: ◑ In progress (matrix below)  ·  Wave A
 **Fix:** the matrix in this document labels every capability Designed/Implemented/Deployed/Tested/
-Prod-enforced against ground truth; a follow-up pass removes/qualifies "tamper-evident, hash-chained", "authoritative
+Prod-enforced against ground truth; a follow-up pass removes/qualifies "court-defensible", "authoritative
 eligibility", "production", and overclaimed "immutable" across READMEs/docs.
 **Validation gate:** matrix accurate to code (done in this doc); grep shows overclaims removed or
 explicitly qualified across all repos (language pass pending).
