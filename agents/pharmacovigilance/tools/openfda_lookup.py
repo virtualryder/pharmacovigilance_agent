@@ -4,12 +4,19 @@ import urllib.request
 
 # openfda_lookup — REAL egress to the public openFDA drug-event (FAERS) API.
 # Returns only AGGREGATE, non-PHI background (report count + top MedDRA reaction terms) for a drug.
-# openFDA is public + read-only + rate-limited; no API key required for low volume. Fail-soft:
-# on any network/parse error we fall back to a deterministic aggregate so the governed workflow
-# still proceeds (this is non-PHI background, not a compliance control).
+# openFDA is public + read-only + rate-limited; no API key required for low volume.
+#
+# P0-3 — NEVER fabricate on source failure. This tool used to substitute a hard-coded "fallback
+# aggregate" (reports_found:3, a canned reaction list) whenever the openFDA call failed or returned
+# nothing — data that looks like FAERS background but was invented. That is exactly the fabrication P0-3
+# forbids. Now a failed / empty lookup returns found:false with authoritative:false and NO invented
+# figures; the caller must treat the background as unavailable rather than mistake fabricated numbers for
+# real FAERS data. (This is contextual background only — it does not feed the seriousness determination,
+# which assess_seriousness derives solely from the de-identified ICSR — but it must still not fabricate.)
 
 _BASE = "https://api.fda.gov/drug/event.json"
 _TIMEOUT = 6
+SOURCE = "openFDA/FAERS"
 
 
 def _get(url):
@@ -46,23 +53,25 @@ def handler(event, context):
     drug = (e.get("drug") or "unknown").strip()
     try:
         reactions, total = _live_lookup(drug)
-        if reactions:
-            return {
-                "drug": drug,
-                "source": "openFDA/FAERS (live)",
-                "reports_found": total,
-                "top_reactions": [r["term"] for r in reactions if r["term"]],
-                "top_reactions_detail": reactions,
-                "note": "aggregate FAERS background only; no PHI",
-            }
     except Exception as exc:
-        fallback_note = "openFDA egress failed (%s); fell back to deterministic aggregate" % type(exc).__name__
-    else:
-        fallback_note = "openFDA returned no results for this drug; deterministic aggregate shown"
+        # source-down: report it, do NOT invent FAERS background
+        return {"found": False, "authoritative": False, "drug": drug, "source": SOURCE,
+                "error": "openFDA egress failed: %s" % type(exc).__name__,
+                "note": "FAERS background unavailable; no fabricated aggregate substituted (P0-3)"}
+
+    terms = [r["term"] for r in reactions if r["term"]]
+    if not terms:
+        return {"found": False, "authoritative": False, "drug": drug, "source": SOURCE,
+                "reports_found": total,
+                "note": "openFDA returned no FAERS results for this drug; no fabricated aggregate substituted (P0-3)"}
+
     return {
+        "found": True,
+        "authoritative": True,
         "drug": drug,
-        "source": "openFDA/FAERS (fallback aggregate)",
-        "reports_found": 3,
-        "top_reactions": ["rhabdomyolysis", "acute kidney injury", "nausea"],
-        "note": fallback_note,
+        "source": SOURCE + " (live)",
+        "reports_found": total,
+        "top_reactions": terms,
+        "top_reactions_detail": reactions,
+        "note": "aggregate FAERS background only; no PHI",
     }

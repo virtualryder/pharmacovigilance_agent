@@ -86,7 +86,8 @@ deploy_fn(){ # $1 fn  $2 src.py  [$3 role]
   local role="${3:-$TOOL_ROLE_ARN}"
   cp "$2" lambda_function.py
   _shared="$(dirname "$2")/evidence.py"; if [ -f "$_shared" ]; then cp "$_shared" evidence.py; else rm -f evidence.py; fi
-  python -c "import zipfile,os; z=zipfile.ZipFile('$1.zip','w',zipfile.ZIP_DEFLATED); z.write('lambda_function.py'); (os.path.exists('evidence.py') and z.write('evidence.py')); z.close()"
+  _prov="$LIB/controls/provenance.py"; if [ -f "$_prov" ]; then cp "$_prov" provenance.py; else rm -f provenance.py; fi
+  python -c "import zipfile,os; z=zipfile.ZipFile('$1.zip','w',zipfile.ZIP_DEFLATED); z.write('lambda_function.py'); (os.path.exists('evidence.py') and z.write('evidence.py')); (os.path.exists('provenance.py') and z.write('provenance.py')); z.close()"
   if aws lambda get-function --function-name "$1" --region "$REGION" >/dev/null 2>&1; then
     aws lambda update-function-code --function-name "$1" --zip-file "fileb://$1.zip" --region "$REGION" >/dev/null
   else
@@ -143,7 +144,17 @@ fi
 # ---- 3c. Wire resource-name env into the control + sign-off-gate lambdas. They read AUDIT_TABLE /
 # AUDIT_BUCKET / PENDING_TABLE / SM_NAME from env (defaults are pv-*), so this makes them point at
 # THIS agent's resources. The guardrailed lambda keeps its guardrail env (set above). ----
-CTRL_ENV="Variables={AUDIT_TABLE=$AUDIT_TABLE,AUDIT_BUCKET=$WORM_BUCKET,PENDING_TABLE=$PENDING_TABLE,SM_NAME=$SM_NAME,DRAFT_MODEL_ID=$DRAFT_MODEL_ID,SOURCE=${PREFIX}-evidence,TENANT_ID=$PREFIX,MODEL_ID=$DRAFT_MODEL_ID,POLICY_VERSION=v1,RULE_VERSION=v1,DEPLOYMENT_VERSION=v1}"
+# P0-3: a per-deploy PROVENANCE_SECRET signs authoritative-source lookups (lookup_income_limit) and
+# verifies them downstream (assess). Both Lambdas must share the SAME value, so it is generated once,
+# persisted to SSM (reused on re-deploys), and injected into every control/tool lambda env below.
+PROV_PARAM="/${PREFIX}/provenance-secret"
+PROV_SECRET="$(aws ssm get-parameter --name "$PROV_PARAM" --with-decryption --region "$REGION" --query Parameter.Value --output text 2>/dev/null || true)"
+if [ -z "$PROV_SECRET" ] || [ "$PROV_SECRET" = "None" ]; then
+  PROV_SECRET="$(python -c 'import secrets;print(secrets.token_hex(32))')"
+  aws ssm put-parameter --name "$PROV_PARAM" --type SecureString --value "$PROV_SECRET" --overwrite --region "$REGION" >/dev/null 2>&1 || true
+  log "generated provenance signing secret -> SSM $PROV_PARAM"
+fi
+CTRL_ENV="Variables={AUDIT_TABLE=$AUDIT_TABLE,AUDIT_BUCKET=$WORM_BUCKET,PENDING_TABLE=$PENDING_TABLE,SM_NAME=$SM_NAME,DRAFT_MODEL_ID=$DRAFT_MODEL_ID,SOURCE=${PREFIX}-evidence,TENANT_ID=$PREFIX,MODEL_ID=$DRAFT_MODEL_ID,POLICY_VERSION=v1,RULE_VERSION=v1,DEPLOYMENT_VERSION=v1,PROVENANCE_SECRET=$PROV_SECRET}"
 wire_env(){ for i in 1 2 3 4 5 6; do aws lambda update-function-configuration --function-name "$1" --environment "$CTRL_ENV" --region "$REGION" >/dev/null 2>&1 && { log "wired resource env into $1"; return; }; sleep 4; done; }
 while IFS=$'\t' read -r target lambda handler kind guarded; do
   [ -z "$target" ] && continue

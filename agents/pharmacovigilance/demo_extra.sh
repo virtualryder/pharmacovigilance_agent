@@ -15,7 +15,17 @@ check "outsider    intake_icsr" DENY  "$(call "$OUT" "$T_INTAKE" '{"source":"Sus
 echo "  -- aggregate FAERS background via openFDA (LIVE federal API, governed) --"
 FDA_OUT="$(call "$REV" "$T_FDA" '{"drug":"atorvastatin"}')"
 check "pv_reviewer openfda_lookup" ALLOW "$FDA_OUT"
-if echo "$FDA_OUT" | grep -qi 'openFDA' && echo "$FDA_OUT" | grep -q '"top_reactions"'; then echo "  PASS | openfda_lookup returned AGGREGATE non-PHI FAERS background"; pass=$((pass+1)); else echo "  FAIL | openfda_lookup -> $FDA_OUT"; fail=$((fail+1)); fi
+# P0-3: live authoritative FAERS background OR a clean source-down (found:false/authoritative:false) —
+# but NEVER a fabricated fallback aggregate. The old tool invented reports_found:3 + a canned reaction
+# list on failure; that is removed.
+if echo "$FDA_OUT" | grep -q '"found": *true' && echo "$FDA_OUT" | grep -q '"authoritative": *true'; then
+  echo "  PASS | openfda_lookup returned live AUTHORITATIVE non-PHI FAERS background"; pass=$((pass+1))
+elif echo "$FDA_OUT" | grep -q '"found": *false' && echo "$FDA_OUT" | grep -q '"authoritative": *false'; then
+  echo "  PASS | openFDA unavailable -> found:false/authoritative:false (no fabricated aggregate, P0-3)"; pass=$((pass+1))
+else
+  echo "  FAIL | openfda_lookup -> $FDA_OUT"; fail=$((fail+1))
+fi
+if echo "$FDA_OUT" | grep -qi 'fallback aggregate'; then echo "  FAIL | fabricated fallback aggregate present -> $FDA_OUT"; fail=$((fail+1)); else echo "  PASS | no fabricated fallback aggregate substituted (P0-3)"; pass=$((pass+1)); fi
 
 echo "  -- fail-closed PHI de-identification (mask_pii) --"
 MASK_OUT="$(call "$REV" "$T_MASK" '{"case":"Patient John Doe, DOB 1970-02-15, SSN 123-45-6789, 42 Main St. Took atorvastatin; hospitalized with rhabdomyolysis."}')"
