@@ -33,6 +33,7 @@ class ComputeStack(cdk.Stack):
             "WORM_BUCKET": data.worm_bucket.bucket_name,
             "SANITIZED_TABLE": data.sanitized_table.table_name,
             "PENDING_TABLE": data.pending_table.table_name,
+            "CASE_TABLE": data.case_table.table_name,   # R3-2 pass-by-reference store
         }
         # Gate-B B5: the deployment's pinned tenant (one PHA/sponsor per isolated deployment).
         if tenant:
@@ -77,6 +78,7 @@ class ComputeStack(cdk.Stack):
             return f
 
         # PV governed tool set (manifest targets).
+        self.ingest = fn("ingest-case", "ingest_case")   # R3-2: the only door for raw content
         self.intake = fn("intake-icsr", "intake_icsr")
         self.lookup = fn("openfda-lookup", "openfda_lookup")        # public egress; no API key
         self.mask = fn("mask-pii", "mask_pii")
@@ -97,6 +99,11 @@ class ComputeStack(cdk.Stack):
             for f in (self.mask, self.assess, self.causality, self.duplicate,
                       self.core, self.guards, self.lookup):
                 self.signing_secret.grant_read(f)
+        # R3-2 case store: ingest WRITES raw content; intake + mask READ it (the only two consumers of
+        # raw text). Nothing else touches raw content; only opaque refs cross Step Functions state.
+        data.case_table.grant(self.ingest, "dynamodb:PutItem")
+        data.case_table.grant(self.intake, "dynamodb:GetItem")
+        data.case_table.grant(self.mask, "dynamodb:GetItem")
         data.pending_table.grant(self.signoff_register, "dynamodb:PutItem")
         data.pending_table.grant_read_write_data(self.finalize)
         # masking: detect PII + write the sanitized store (PutItem only)

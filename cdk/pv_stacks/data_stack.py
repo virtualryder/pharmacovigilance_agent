@@ -64,6 +64,18 @@ class DataStack(cdk.Stack):
             removal_policy=cdk.RemovalPolicy.DESTROY,
         )
 
+        # R3-2 pass-by-reference case store: the raw adverse-event source lives HERE (encrypted, TTL'd)
+        # and ONLY an opaque case_ref travels through Step Functions state — the workflow engine never
+        # becomes a sensitive-data repository.
+        self.case_table = ddb.Table(
+            self, "CaseStore", table_name=f"{prefix}-case-store",
+            partition_key=ddb.Attribute(name="case_ref", type=ddb.AttributeType.STRING),
+            billing_mode=ddb.BillingMode.PAY_PER_REQUEST,
+            encryption=enc_ddb, encryption_key=self.cmk,
+            time_to_live_attribute="expires_at",
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+        )
+
         # Sign-off pending-approvals table (the register/approve path needs it).
         self.pending_table = ddb.Table(
             self, "PendingApprovals", table_name=f"{prefix}-pending-approvals",

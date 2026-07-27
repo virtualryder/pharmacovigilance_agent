@@ -24,7 +24,18 @@ def _coerce(e):
 
 def handler(event, context):
     e = _coerce(event)
-    case = e.get("case", e.get("application", ""))
+    # R3-2 pass-by-reference: prefer an opaque case_ref (server-side fetch; raw content never travels
+    # through Step Functions state). When input arrived by ref, the masked text is NOT echoed in the
+    # response either — consumers load it server-side from the sanitized-artifact store via the ref.
+    by_ref = False
+    case = e.get("case", e.get("source", ""))
+    if not case and e.get("case_ref"):
+        import case_store
+        case = case_store.get_case(e["case_ref"]) or ""
+        by_ref = True
+        if not case:
+            return {"deidentified": False, "masked_case": None,
+                    "error": "case_ref unresolved (unknown ref) - fail-closed"}
     if not isinstance(case, str):
         case = json.dumps(case, ensure_ascii=False)
     if not case.strip():
@@ -48,7 +59,12 @@ def handler(event, context):
     # P0-1: mint a SIGNED reference over the exact masked content; downstream tools verify this ref,
     # never the boolean. When SANITIZED_TABLE is configured the masked payload is stored server-side.
     ref = sanitized.mint_ref(masked, engine="comprehend:DetectPiiEntities", entities_masked=len(ents))
-    return {"deidentified": True, "masked_case": masked, "entities_masked": len(ents),
-            "masked_by": "comprehend:DetectPiiEntities", "sanitized_ref": ref,
-            "note": ("pass sanitized_ref (JSON) to assess_seriousness/record_causality/draft_narrative — "
-                     "it is the server-signed proof of masking; the deidentified boolean alone is not accepted")}
+    out = {"deidentified": True, "entities_masked": len(ents),
+           "masked_by": "comprehend:DetectPiiEntities", "sanitized_ref": ref,
+           "note": ("pass sanitized_ref (JSON) to assess_seriousness/record_causality/draft_narrative — "
+                    "it is the server-signed proof of masking; the deidentified boolean alone is not accepted")}
+    # R3-2: in pass-by-reference mode NO masked content returns into Step Functions state — consumers
+    # load the masked text server-side from the sanitized-artifact store via the signed ref.
+    if not by_ref:
+        out["masked_case"] = masked
+    return out

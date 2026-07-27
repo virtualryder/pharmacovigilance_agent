@@ -29,7 +29,12 @@ def _coerce(e):
 
 def handler(event, context):
     e = _coerce(event)
+    # R3-2 pass-by-reference: accept an opaque case_ref and fetch the raw source server-side, so raw
+    # content never travels through Step Functions state (extraction yields only non-PHI decision fields).
     text = e.get("source", "")
+    if not text and e.get("case_ref"):
+        import case_store
+        text = case_store.get_case(e["case_ref"]) or ""
     if not isinstance(text, str):
         text = json.dumps(text)
     low = text.lower()

@@ -146,6 +146,19 @@ def test_masking_precedes_assessment_and_draft():
     assert order.index("MaskPii") < order.index("AssessSeriousness") < order.index("DraftNarrative")
 
 
+def test_workflow_state_carries_no_raw_or_masked_content():
+    """R3-2: execution input is {case_id, requester, case_ref, ...}; intake+mask receive case_ref; the
+    assessor/drafter receive only the signed sanitized_ref (load text server-side). No raw `source` and
+    no `masked_case` may appear in the state machine definition."""
+    asl = json.dumps(T_WORKFLOW.to_json())
+    assert "$.source" not in asl, "raw source must never enter Step Functions state"
+    assert "masked_case" not in asl, "masked content must not cross state (server-side store only)"
+    assert "case_ref" in asl
+    tpl = json.dumps(T_COMPUTE.to_json())
+    assert "ingest-case" in tpl                      # the one door for raw content
+    assert '"CASE_TABLE"' in tpl                     # encrypted pass-by-reference store wired
+
+
 # ── identity: no users, no passwords (P0-6) ──────────────────────────────────
 
 def test_identity_creates_no_users_and_no_passwords():

@@ -33,6 +33,7 @@ must treat missing background as unavailable, never mistake a fabricated number 
 ## Before real (PHI) data
 
 Confirm which exact case fields enter the platform, whether de-identification is sufficient for the use,
-retention, who can access raw vs masked content, and the HIPAA / 21 CFR Part 11 obligations. Until the
-pass-by-reference follow-on lands, raw `source` transits Step Functions state pre-masking (documented
-limitation) — the strict PHI canary flags it.
+retention, who can access raw vs masked content, and the HIPAA / 21 CFR Part 11 obligations. **R3-2
+pass-by-reference is implemented** — raw `source` never enters Step Functions state (ingest → opaque
+`case_ref`; masked text reached server-side via the signed `sanitized_ref`), so the strict PHI canary
+can PASS. (B5 tenant-scoped fetch on the case store remains a follow-on.)

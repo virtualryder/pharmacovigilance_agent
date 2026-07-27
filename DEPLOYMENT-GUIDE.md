@@ -46,15 +46,16 @@ Start the controller (`pv-pilot-icsr-workflow`) with:
 check → (DuplicateHold if a duplicate) → draft narrative → INTENT audit → a **different** qualified
 reviewer approves at the `waitForTaskToken` gate → finalize (exactly-once `FINAL#` marker).
 
-> **Gate-B note:** PV is not yet pass-by-reference — the raw `source` transits Step Functions state
-> until masking. The strict PII canary will flag pre-mask content; add an ingest/case-store step to
-> reach zero-PII telemetry before a real-data pilot (`PV-PILOT-READINESS-PLAN.md`).
+> **Zero-PHI note (R3-2):** call the **ingest-case** Lambda FIRST — it stores the raw `source` in the
+> encrypted case store and returns the opaque `case_ref` you pass to the workflow. Raw content never
+> enters Step Functions state, and the masked text is reached only server-side via the signed
+> `sanitized_ref`, so the strict PHI canary can PASS.
 
 ## 3. The EP1 validation (what cuts the release)
 
 On a clean account, deploy all switches, then capture: a happy-path SUCCEEDED run, a DuplicateHold
-run, the strict PHI canary (0 hits across Logs/X-Ray/DLQ/SFN history — expected to flag pre-mask
-content until the case-store follow-on), a load run, and an exactly-once replay storm. Then tear down
+run, the strict PHI canary (0 hits across Logs/X-Ray/DLQ/SFN history — R3-2 pass-by-reference keeps raw
++ masked content out of state, so this should PASS), a load run, and an exactly-once replay storm. Then tear down
 and confirm zero residual. Record the results in `VALIDATED_RELEASE.md` and cut `v0.1.0-pilot-rc1`.
 
 ## 4. Teardown

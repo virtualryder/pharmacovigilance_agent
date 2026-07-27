@@ -35,12 +35,12 @@ scaffolding + core docs in place.
 **Gate B — live EP1 validation (the next step; SA/customer runs it).** Deploy all Gate-B switches to a
 clean account; capture a happy-path SUCCEEDED run, a DuplicateHold run, the strict PHI canary, a load
 run, and an exactly-once replay storm; tear down + confirm zero residual; record in `VALIDATED_RELEASE.md`
-and cut `v0.1.0-pilot-rc1`. **Expected finding:** the PHI canary will flag pre-mask content in Step
-Functions state until the pass-by-reference follow-on lands (see §3).
+and cut `v0.1.0-pilot-rc1`. **R3-2 pass-by-reference is implemented**, so the strict PHI canary is
+expected to PASS (raw + masked content stay out of Step Functions state).
 
 **Gate C — before real (PHI) data.**
-- **Pass-by-reference (R3-2):** add an ingest/case-store step so raw `source` never enters execution
-  history; re-run the strict canary to PASS.
+- ~~Pass-by-reference (R3-2)~~ — **done**: ingest/case-store keeps raw + masked content out of execution
+  history (synth + runtime proven); the strict canary is expected to PASS on the EP1 run.
 - **Drug-safety SME (QPPV) sign-off** on the seriousness rules, reporting clocks, duplicate logic, the
   causality prepare-only boundary, and the CIOMS narrative language.
 - **Enterprise IdP** federation round-trip; **operating-model doc bundle** (KEY-MANAGEMENT,
@@ -54,7 +54,7 @@ coding + E2B(R3) XML gateway + Argus/ArisG integration; measured pilot metrics; 
 ## 3. Explicit not-yet-true (say these out loud)
 
 - No live EP1 evidence yet (Gate B).
-- Not pass-by-reference — raw content transits SFN state until masking (Gate C).
+- Pass-by-reference (R3-2) **done** — raw + masked content stay out of SFN state (B5 tenant-scoped fetch is a follow-on).
 - Single-key provenance (GA-2 split is a follow-on).
 - No independent audit/pen test; no QPPV SME sign-off; synthetic data only.
 - MedDRA/WHODrug coding, E2B(R3) XML/gateway submission, Argus/ArisG, 21 CFR Part 11 CSV are adopter.

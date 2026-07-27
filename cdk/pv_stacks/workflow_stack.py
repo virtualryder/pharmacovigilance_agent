@@ -10,16 +10,15 @@ Lambda; a failed guard routes to ManualReview (NEEDS_REVIEW), never onward:
   DuplicateHold is a TERMINAL WORK-QUEUE state (not an error): a case detected as a duplicate ICSR is
   held so it is never double-reported to the regulator; the safety team works the hold.
 
-Execution-input contract (documented): {case_id, requester, source, drug, case_key, known_keys}.
-`source` is the raw adverse-event text; `drug` the suspect product; `case_key`/`known_keys` feed the
-duplicate check. The LLM operates INSIDE bounded steps only (the drafter Lambda invokes Bedrock;
-extraction/seriousness are deterministic). The sign-off gate keeps separation-of-duties: signoff_register
-stores the task token for a DIFFERENT verified approver; finalize runs only after approval.
-
-NOTE (Gate-B follow-on): PV is not yet pass-by-reference — the raw `source` transits Step Functions
-state until masking. To reach the financial-aid agent's zero-PII-telemetry posture (R3-2) before a
-real-data pilot, add an ingest/case-store step so only opaque refs travel through execution history; the
-strict PII canary will flag pre-mask content until then. Documented in PV-PILOT-READINESS-PLAN."""
+Execution-input contract (documented): {case_id, requester, case_ref, drug, case_key, known_keys}.
+`case_ref` is the OPAQUE reference minted by the ingest-case Lambda (called first by the intake
+API/operator) over the raw adverse-event text — R3-2 ZERO-PHI: the raw `source` NEVER enters Step
+Functions state; intake + mask fetch it server-side by ref, and the masked text is reached only via the
+signed `sanitized_ref` (server-side sanitized-artifact store), so no content crosses execution history.
+`drug` is the suspect product; `case_key`/`known_keys` feed the duplicate check. The LLM operates INSIDE
+bounded steps only (the drafter Lambda invokes Bedrock; extraction/seriousness are deterministic). The
+sign-off gate keeps separation-of-duties: signoff_register stores the task token for a DIFFERENT verified
+approver; finalize runs only after approval."""
 import aws_cdk as cdk
 from aws_cdk import aws_stepfunctions as sfn, aws_stepfunctions_tasks as tasks
 from constructs import Construct
@@ -45,21 +44,25 @@ class WorkflowStack(cdk.Stack):
                                     comment="Fail-closed: evidence missing/unverified -> NEEDS_REVIEW "
                                             "for a safety reviewer; no automated outcome.")
 
-        extract = invoke("Extract", compute.intake, {"source.$": "$.source"}, "$.extract")
+        # R3-2: the execution is started with {case_id, requester, case_ref, drug, ...} — the raw source
+        # NEVER enters Step Functions state (it lives in the encrypted case store; the intake API/operator
+        # calls the ingest-case Lambda FIRST). intake + mask fetch the raw text server-side by ref.
+        extract = invoke("Extract", compute.intake, {"case_ref.$": "$.case_ref"}, "$.extract")
         g_extracted = guard("GuardExtracted", "extracted", {"fields.$": "$.extract.out.fields"})
 
         lookup = invoke("LookupBackground", compute.lookup, {"drug.$": "$.drug"}, "$.lookup")
-        # Pass the WHOLE lookup output: openFDA returns found:false on a source failure (no coa/terms),
+        # Pass the WHOLE lookup output: openFDA returns found:false on a source failure (no terms),
         # and judging that is the guard's job — not a brittle JSONPath here.
         g_bg = guard("GuardBackground", "background", {"lookup.$": "$.lookup.out"})
 
-        mask = invoke("MaskPii", compute.mask, {"case.$": "$.source"}, "$.mask")
+        mask = invoke("MaskPii", compute.mask, {"case_ref.$": "$.case_ref"}, "$.mask")
         g_deid = guard("GuardDeidentified", "deidentified",
                        {"sanitized_ref.$": "$.mask.out.sanitized_ref"})
 
+        # R3-2: assess receives ONLY the signed sanitized_ref (no masked_case) — it loads the masked text
+        # SERVER-SIDE from the sanitized-artifact store, so masked content never crosses state either.
         assess = invoke("AssessSeriousness", compute.assess,
-                        {"case.$": "$.mask.out.masked_case",
-                         "sanitized_ref.$": "$.mask.out.sanitized_ref"}, "$.assessment")
+                        {"sanitized_ref.$": "$.mask.out.sanitized_ref"}, "$.assessment")
         g_rules = guard("GuardRulesExecuted", "rules_executed", {"assessment.$": "$.assessment.out"})
 
         dup = invoke("DetectDuplicate", compute.duplicate,
@@ -70,9 +73,9 @@ class WorkflowStack(cdk.Stack):
             comment="TERMINAL WORK QUEUE (not an error): case detected as a duplicate ICSR — held so it "
                     "is not double-reported to the regulator; the safety team works the hold.")
 
+        # R3-2: the drafter loads the masked text SERVER-SIDE via the signed ref — no content in state.
         draft = invoke("DraftNarrative", compute.core,
-                       {"case.$": "$.mask.out.masked_case",
-                        "deidentified": True, "sanitized_ref.$": "$.mask.out.sanitized_ref"}, "$.draft")
+                       {"deidentified": True, "sanitized_ref.$": "$.mask.out.sanitized_ref"}, "$.draft")
         audit_intent = invoke("AuditIntent", compute.write_audit,
                               {"icsr_id.$": "$.case_id", "action": "icsr-determination",
                                "phase": "INTENT", "actor": "workflow-controller",

@@ -16,10 +16,13 @@ CDK stacks. Evidence to date is author-produced on synthetic data; independent t
 | T9 | **PHI in telemetry** — traces/logs become a second copy of sensitive data | Masking before model + audit; `token_present` boolean logging; Guardrail anonymizes model output | (partial) — see residual risk below |
 | T10 | **Deployment-path compromise** — wrong role modified by name prefix; default creds | Exact-ARN IAM (no role-lookup-by-prefix; `_obs_setup.sh` fixed); CDK explicit IAM; zero users / no default passwords | `tests/test_token_boundary.py::test_no_role_lookup_by_name_prefix...`; `tests/test_cdk_stacks.py` (no users/passwords) |
 
-**Residual risks (tracked, not closed).** **PHI in Step Functions state (T9):** PV is not yet
-pass-by-reference — the raw `source` transits execution history until masking, so the strict PHI canary
-will flag pre-mask content; the R3-2 case-store follow-on closes it before a real-data pilot. Also open
-(require live/independent work): **live EP1 evidence** (canary, load, exactly-once) is unrun; independent
-penetration test + source/Cedar/prompt-injection review; enterprise IdP/MFA round-trip; multi-account
-separation; GA-2 domain-split signing; QPPV SME sign-off. All current evidence is author-produced on
-synthetic data — see `RELEASE-MANIFEST.md`.
+**T9 update — CLOSED at the design/synth level (R3-2 pass-by-reference).** Raw `source` never enters
+Step Functions state (ingest → opaque `case_ref`) and masked text is reached only server-side via the
+signed `sanitized_ref`, so the strict PHI canary can PASS. Proven at synth (no raw/masked content in the
+state machine — `tests/test_cdk_stacks.py`) + runtime (`tests/test_pass_by_reference.py`); confirmed on
+the live EP1 canary run. (B5 tenant-scoped fetch on the case store is a follow-on.)
+
+**Residual risks (tracked, not closed).** **Live EP1 evidence** (canary, load, exactly-once) is unrun;
+independent penetration test + source/Cedar/prompt-injection review; enterprise IdP/MFA round-trip;
+multi-account separation; QPPV SME sign-off. All current evidence is author-produced on synthetic data —
+see `RELEASE-MANIFEST.md`.

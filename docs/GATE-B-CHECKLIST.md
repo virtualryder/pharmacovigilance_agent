@@ -8,7 +8,7 @@ means the control is in the IaC and synth-validated; "live-validated" requires t
 | **B1 · Private networking + locked egress** — VPC, isolated subnets, Network Firewall allowlist = `.api.fda.gov` ONLY | `-c network_mode=private` | ✅ | ☐ |
 | **B2 · Customer-managed KMS** over tables, secrets, Lambda env, log groups, SNS | `-c kms=customer-managed` | ✅ | ☐ |
 | **B3 · Pilot identity** — MFA ON (software token), threat protection ENFORCED, admin-create-only, zero users; OIDC IdP federation as IaC | `-c identity_mode=pilot` | ✅ | ☐ (enterprise IdP round-trip) |
-| **B4 · PHI-telemetry canary** — strict 0-hit gate across Logs/X-Ray/DLQ/SFN history | (harness) | ◐ (canary script portable from sibling) | ☐ — **expected to flag pre-mask content until pass-by-reference (R3-2)** |
+| **B4 · PHI-telemetry canary** — strict 0-hit gate across Logs/X-Ray/DLQ/SFN history | (harness) | ✅ **R3-2 pass-by-reference implemented** (no raw/masked content in SFN state — synth + runtime proven) | ☐ (run the canary on EP1 — should PASS) |
 | **B5 · Tenant isolation** — deployment-pinned tenant HMAC-signed into artifacts | `-c tenant=<sponsor-id>` | ✅ | ☐ |
 | **B6 · Load / replay** — concurrency + exactly-once replay storm | (harness) | ◐ | ☐ |
 
@@ -22,7 +22,7 @@ means the control is in the IaC and synth-validated; "live-validated" requires t
 
 1. **Run EP1** on a clean account with all switches (the SA/customer runs it) — capture happy path,
    DuplicateHold, PHI canary, load, exactly-once; tear down; record in `VALIDATED_RELEASE.md`; cut the tag.
-2. **Pass-by-reference (R3-2)** so the PHI canary can PASS before real data.
+2. ~~Pass-by-reference (R3-2)~~ — **done** (ingest/case-store; raw + masked content out of SFN state).
 3. **Enterprise IdP** round-trip; **QPPV SME sign-off**; the remaining operating-model docs
    (KEY-MANAGEMENT, RETENTION-PROFILES, INCIDENT-RESPONSE, AUDIT-READINESS, MCP-GATEWAY,
    CONFIGURATION-WORKSHEET, SME-REVIEW-PACKET).

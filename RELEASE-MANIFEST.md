@@ -29,8 +29,11 @@ this table, this table is correct and the other file is a bug.*
 - **Live EP1 not yet captured** — the CDK synthesizes and the controls are unit-proven, but a real
   clean-account deploy + teardown with captured evidence (happy path, DuplicateHold, PHI canary, load +
   exactly-once replay) has not been run. That run cuts `v0.1.0-pilot-rc1`.
-- **Not yet pass-by-reference** — raw `source` transits Step Functions state until masking; the strict
-  PII canary will flag pre-mask content until an ingest/case-store step is added (R3-2 follow-on).
+- **Pass-by-reference (R3-2) implemented** — raw `source` never enters Step Functions state (ingest →
+  opaque `case_ref`; masked content reached server-side via the signed `sanitized_ref`), so the strict
+  PHI canary can PASS. Proven at synth (no raw/masked content in the state machine) + runtime
+  (`tests/test_pass_by_reference.py`); confirmed on the live EP1 run. (B5 tenant-scoped fetch on the
+  case store remains a follow-on.)
 - **Single-key provenance** — not the financial-aid agent's GA-2 domain split (follow-on hardening).
 - Evidence is author-produced on synthetic data; **no independent audit / pen test** and **no
   credentialed drug-safety (QPPV) SME sign-off** on the seriousness rules + narrative language yet.

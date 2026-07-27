@@ -41,6 +41,7 @@ pinning, MFA identity, CMK coverage, observability alarms, gateway ENFORCE + the
 ## Notes / follow-ons
 
 - **Single-key provenance** (not the financial-aid agent's GA-2 domain split) — a follow-on hardening.
-- **Not yet pass-by-reference**: the raw `source` transits Step Functions state until masking; add an
-  ingest/case-store step to reach zero-PII telemetry before a real-data pilot (see PV-PILOT-READINESS-PLAN).
+- **Pass-by-reference (R3-2) implemented**: the ingest-case Lambda + case store keep raw `source` out of
+  Step Functions state (only an opaque `case_ref` travels), and masked text is reached server-side via
+  the signed `sanitized_ref` — the strict PHI canary can PASS. (B5 tenant-scoped fetch is a follow-on.)
 - **Live EP1** clean-account validation is the remaining step to a captured-evidence release.
