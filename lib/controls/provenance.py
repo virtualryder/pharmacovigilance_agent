@@ -27,10 +27,29 @@ import os
 # asymmetric RS256/JWKS instead — see lib/connector/sor_api.py.)
 
 _SECRET_ENV = "PROVENANCE_SECRET"
+_SECRET_ARN_ENV = "PROVENANCE_SECRET_ARN"   # pilot path: AWS Secrets Manager (no plaintext in the template)
 _ALG = "HMAC-SHA256"
+_sm_cache = {}
+
+
+def _sm(arn):
+    """Secrets Manager fetch, cached for the Lambda lifetime; unreadable -> b'' (fail-closed)."""
+    if arn not in _sm_cache:
+        try:
+            import boto3
+            r = boto3.client("secretsmanager").get_secret_value(SecretId=arn)
+            _sm_cache[arn] = (r.get("SecretString") or "").encode("utf-8")
+        except Exception:
+            _sm_cache[arn] = b""
+    return _sm_cache[arn]
 
 
 def _secret():
+    """Prefer the Secrets Manager ARN (pilot/production); fall back to a plaintext env value
+    (disposable sandbox validation only). Absent both -> b'' and every sign/verify fails closed."""
+    arn = os.environ.get(_SECRET_ARN_ENV)
+    if arn:
+        return _sm(arn)
     return (os.environ.get(_SECRET_ENV) or "").encode("utf-8")
 
 
