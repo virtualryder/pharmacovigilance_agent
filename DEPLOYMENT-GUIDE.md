@@ -68,9 +68,24 @@ The audit ledger + WORM vault + customer-managed CMK are **RETAIN'd** by design 
 with the stack — find the retained key by tag and schedule deletion). VPC-attached Lambda stacks take
 ~15–30 min to delete (Hyperplane ENI release).
 
+## 4b. EP1 harness (turnkey)
+
+Two scripts make the EP1 run turnkey:
+
+```bash
+python scripts/validate_deployment.py --env pilot --region us-east-1   # machine PASS/FAIL verdict
+python scripts/pii_canary.py --prefix pv-pilot --execute --strict      # PHI telemetry canary (0 hits)
+python scripts/validate_deployment.py --env pilot --expect-absent      # after teardown: 0 residual stacks
+```
+
+`validate_deployment` probes stacks/secret/masking-control/guards/ingest-pass-by-reference/workflow and
+prints a JSON verdict (exit 0 = PASS). `pii_canary --strict` seeds a marked case through ingest → the
+workflow and sweeps CloudWatch Logs, X-Ray, DLQs, and Step Functions history for the marker — with R3-2
+pass-by-reference it should report **PASS** (0 hits everywhere).
+
 ## 5. Offline verification (no AWS)
 
 ```bash
-python -m pytest tests/ -q                    # 95/95: control-plane + CDK synthesis
+python -m pytest tests/ -q                    # 107/107: control-plane + CDK synthesis + pass-by-ref + canary logic
 python -m pytest tests/test_cdk_stacks.py -q  # 22 CDK assertions (synthesizes all 7 stacks)
 ```

@@ -43,7 +43,7 @@ audit, human separation-of-duties sign-off, supply-chain + governance-core integ
 7-stack AWS CDK set + Gate-B posture as switches** (private net + `.api.fda.gov` egress allowlist + CMK +
 MFA identity + tenant pin), **release discipline** (RELEASE + manifest + consistency gate), START-HERE,
 DEPLOYMENT-GUIDE, threat model, data-source policy, Gate-B checklist, pilot-readiness plan. Suite: **95
-offline tests** (73 control-plane + 22 CDK synthesis).
+offline tests** (85 control-plane + 22 CDK synthesis).
 
 **Not yet (to a captured-evidence pilot):** the **live EP1** clean-account validation (the SA/customer
 runs it → cuts `v0.1.0-pilot-rc1`). The full operating-model doc bundle is now in `docs/` (KEY-MANAGEMENT,

@@ -45,6 +45,6 @@ coding, E2B(R3) XML + FAERS/EudraVigilance gateway, Argus/ArisG integration.
 
 ## Status in one line
 
-Control-plane hardened + full CDK/Gate-B IaC, **95/95 offline tests (incl. 22 CDK synthesis)**. Next:
+Control-plane hardened + full CDK/Gate-B IaC, **107/107 offline tests (incl. 22 CDK synthesis)**. Next:
 run the live EP1 clean-account validation → cut `v0.1.0-pilot-rc1` with captured evidence; then a
 credentialed drug-safety (QPPV) SME sign-off and independent security testing before real data.

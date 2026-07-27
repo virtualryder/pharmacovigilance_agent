@@ -12,7 +12,7 @@ this table, this table is correct and the other file is a bug.*
 |---|---|
 | **Product** | Pharmacovigilance ICSR Intake **Assistant** (never an autonomous submitter or causality-committer) |
 | **Target pilot tag** | `v0.1.0-pilot-rc1` (RELEASE file) — **not yet cut**: awaiting the live EP1 validation |
-| **Offline test suite** | **95 / 95** passing (control-plane 73 + **22 CDK stack-synthesis** assertions) |
+| **Offline test suite** | **107 / 107** passing (control-plane 85 + **22 CDK stack-synthesis** assertions) |
 | **Deployment IaC** | AWS CDK, 7 stacks (`cdk/pv_stacks`, prefix `pv-`) — synthesizes to valid CloudFormation (in-suite `aws_cdk.assertions`) |
 | **Gate-B posture** | private networking + egress allowlist `.api.fda.gov` ONLY · customer-managed KMS · MFA-enforced pilot identity · tenant pin — **as CDK switches** |
 | **Live EP1 validation** | **NOT YET RUN** — the remaining step to captured evidence + a cut release (the customer/SA runs the 7-stack clean-account deploy + teardown; `DEPLOYMENT-GUIDE.md`) |
@@ -21,7 +21,7 @@ this table, this table is correct and the other file is a bug.*
 
 ## Count glossary
 
-- **95 offline tests** — the CI suite (73 control-plane + 22 CDK synthesis). Authoritative offline number.
+- **107 offline tests** — the CI suite (85 control-plane + 22 CDK synthesis). Authoritative offline number.
 - **32-check legacy demo** — the shell-engine governance demo; internal reference only, not pilot evidence.
 
 ## Known limitations (explicit)

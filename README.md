@@ -38,7 +38,7 @@ financial-aid, and housing agents, from a reusable, manifest-driven template.
 > failure (P0-4). **Now also shipped: the full 7-stack AWS CDK set + Gate-B posture as switches
 > (`cdk/pv_stacks`, synth-validated by 22 assertions), release manifest, START-HERE, and pilot-readiness
 > plan.** Remaining to a captured-evidence release: the **live EP1** clean-account validation (the SA/customer
-> runs it; `DEPLOYMENT-GUIDE.md`) then cut `v0.1.0-pilot-rc1`. Suite: **95 offline tests** (control-plane
+> runs it; `DEPLOYMENT-GUIDE.md`) then cut `v0.1.0-pilot-rc1`. Suite: **107 offline tests** (control-plane
 > 73 + CDK 22). See `PV-PILOT-READINESS-PLAN.md`.
 
 ---

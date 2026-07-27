@@ -7,7 +7,7 @@
 |---|---|
 | Tag | `v0.1.0-pilot-rc1` — the target pilot tag. **Cut AFTER the live EP1 validation captures its evidence** (not yet run). Single source of truth: `RELEASE`. |
 | Commit SHA | the commit carrying tag `v0.1.0-pilot-rc1` once cut (`git rev-list -n1 v0.1.0-pilot-rc1`) |
-| Test count | **95/95** offline (control-plane + CDK synthesis). Authoritative matrix: [`RELEASE-MANIFEST.md`](RELEASE-MANIFEST.md) |
+| Test count | **107/107** offline (control-plane + CDK synthesis). Authoritative matrix: [`RELEASE-MANIFEST.md`](RELEASE-MANIFEST.md) |
 | Validation date | ☐ pending EP1 |
 | Region | us-east-1 (target) |
 | Deployment | AWS CDK `--all`; EP1 target: `retention_profile=pilot kms=customer-managed network_mode=private identity_mode=pilot tenant=<sponsor-id>` |
