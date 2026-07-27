@@ -2,8 +2,9 @@
 
 **Product:** Pharmacovigilance ICSR Intake **Assistant** (never an autonomous submitter or
 causality-committer). **Repo:** `github.com/virtualryder/pharmacovigilance_agent`. **Target tag:**
-`v0.1.0-pilot-rc1` (cut after live EP1). **Build state:** control-plane hardened + full CDK/Gate-B IaC;
-**107/107 offline tests** (85 control-plane + 22 CDK synthesis). **Owner:** David Ryder (AWS HCLS SA).
+`v0.1.0-pilot-rc1` (cut after live EP1 — **done 2026-07-27**). **Build state:** control-plane hardened +
+full CDK/Gate-B IaC, **live EP1-validated**; **109/109 offline tests** (control-plane + 22 CDK synthesis).
+**Owner:** David Ryder (AWS HCLS SA).
 
 ---
 
@@ -14,8 +15,9 @@ causality-committer). **Repo:** `github.com/virtualryder/pharmacovigilance_agent
   determination, or writes to an E2B gateway — Cedar-forbidden, tool-refused, human-gated.
 - **openFDA/FAERS is reference context**, not authoritative for a case, causality, or incidence, and it
   never feeds the seriousness determination.
-- **Evidence is author-produced and synthetic-only.** The CDK synthesizes and the controls are
-  unit-proven, but **the live EP1 run has not happened** — no captured live evidence yet.
+- **Evidence is author-produced and synthetic-only.** The CDK synthesizes, the controls are unit-proven,
+  and the **live EP1 run is captured** (`evidence/EP1-VALIDATION.md`, 2026-07-27) — but on a disposable
+  sandbox with synthetic data; no independent audit and no real PHI yet.
 
 ## 1. What is done
 
@@ -29,14 +31,15 @@ causality-committer). **Repo:** `github.com/virtualryder/pharmacovigilance_agent
 
 ## 2. Gates to pilot depth
 
-**Gate A — code + synth (done).** 107/107 offline; CDK synthesizes to valid CloudFormation; release
+**Gate A — code + synth (done).** 109/109 offline; CDK synthesizes to valid CloudFormation; release
 scaffolding + core docs in place.
 
-**Gate B — live EP1 validation (the next step; SA/customer runs it).** Deploy all Gate-B switches to a
-clean account; capture a happy-path SUCCEEDED run, a DuplicateHold run, the strict PHI canary, a load
-run, and an exactly-once replay storm; tear down + confirm zero residual; record in `VALIDATED_RELEASE.md`
-and cut `v0.1.0-pilot-rc1`. **R3-2 pass-by-reference is implemented**, so the strict PHI canary is
-expected to PASS (raw + masked content stay out of Step Functions state).
+**Gate B — live EP1 validation (DONE, 2026-07-27, env `pv-val1`, us-east-1).** All Gate-B switches
+deployed to a clean account; captured `validate_deployment.py` PASS, a happy-path run to the human gate, a
+DuplicateHold terminal, and the **strict PHI canary PASS (0 leaks)**; torn down + residual-swept; recorded
+in `VALIDATED_RELEASE.md` + `evidence/EP1-VALIDATION.md`; tag cut. The strict canary caught a real R3-2
+gap (the CIOMS narrative crossed execution state) — fixed (narrative now server-side under a ref) and
+re-validated. Prod-scale live load remains a customer-side exit item.
 
 **Gate C — before real (PHI) data.**
 - ~~Pass-by-reference (R3-2)~~ — **done**: ingest/case-store keeps raw + masked content out of execution
@@ -54,10 +57,11 @@ coding + E2B(R3) XML gateway + Argus/ArisG integration; measured pilot metrics; 
 
 ## 3. Explicit not-yet-true (say these out loud)
 
-- No live EP1 evidence yet (Gate B).
-- Pass-by-reference (R3-2) **done** — raw + masked content stay out of SFN state (B5 tenant-scoped fetch is a follow-on).
+- Live EP1 evidence is captured (2026-07-27) but on a disposable sandbox with synthetic data only.
+- Pass-by-reference (R3-2) **done in both directions** — raw, masked, AND the drafted narrative stay out
+  of SFN state (strict canary PASS, 0 leaks). B5 tenant-scoped fetch is a follow-on.
 - One signing domain (mask_pii); openFDA background is unsigned (authoritative-flag). GA-2 split N/A.
-- No independent audit/pen test; no QPPV SME sign-off; synthetic data only.
+- No independent audit/pen test; no QPPV SME sign-off; no enterprise IdP round-trip; no prod-scale load.
 - MedDRA/WHODrug coding, E2B(R3) XML/gateway submission, Argus/ArisG, 21 CFR Part 11 CSV are adopter.
 
 ## 4. Recommended pilot shape

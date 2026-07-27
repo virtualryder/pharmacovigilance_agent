@@ -64,8 +64,16 @@ def _draft(e):
         narrative = resp["output"]["message"]["content"][0]["text"].strip()
         if resp.get("stopReason") == "guardrail_intervened" and not narrative:
             return {"error": "output guardrail blocked the draft (fail-closed)", "drafted_by": None, "guardrail": "BLOCKED"}
+        # R3-2 pass-by-reference for the DRAFT OUTPUT: the CIOMS narrative is drafted from de-identified
+        # content, but a redaction gap (e.g. Comprehend not classifying a token) could still leave PHI in
+        # the text — so the narrative must NEVER travel in Step Functions state or any telemetry. Store it
+        # server-side under a mask_pii-signed sanitized_ref and return ONLY the opaque ref + metadata. The
+        # human reviewer retrieves the narrative server-side via the ref at the sign-off gate. The raw text
+        # is never returned by this tool (never in $.draft, never in execution history / logs / X-Ray).
+        ref = sanitized.mint_ref(narrative, engine="bedrock:draft_narrative")
         return {"drafted_by": DRAFT_MODEL_ID, "chars": len(narrative),
-                "guardrail_applied": bool(GUARDRAIL_ID), "deidentified_input": True, "narrative": narrative}
+                "guardrail_applied": bool(GUARDRAIL_ID), "deidentified_input": True,
+                "narrative_ref": ref, "narrative_stored": bool(ref.get("stored"))}
     except (BotoCoreError, ClientError, KeyError, IndexError) as exc:
         return {"error": "draft failed: " + type(exc).__name__ + ": " + str(exc), "drafted_by": None}
 

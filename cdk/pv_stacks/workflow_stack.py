@@ -73,7 +73,9 @@ class WorkflowStack(cdk.Stack):
             comment="TERMINAL WORK QUEUE (not an error): case detected as a duplicate ICSR — held so it "
                     "is not double-reported to the regulator; the safety team works the hold.")
 
-        # R3-2: the drafter loads the masked text SERVER-SIDE via the signed ref — no content in state.
+        # R3-2 (both directions): the drafter loads the masked text SERVER-SIDE via the signed ref (no
+        # content in the input) AND returns only an opaque narrative_ref (the CIOMS text is stored
+        # server-side, never in $.draft). So neither the case nor the drafted narrative enters state.
         draft = invoke("DraftNarrative", compute.core,
                        {"deidentified": True, "sanitized_ref.$": "$.mask.out.sanitized_ref"}, "$.draft")
         audit_intent = invoke("AuditIntent", compute.write_audit,
@@ -87,6 +89,9 @@ class WorkflowStack(cdk.Stack):
             payload=sfn.TaskInput.from_object(
                 {"icsr_id.$": "$.case_id", "requester.$": "$.requester",
                  "content_hash.$": "States.Hash(States.JsonToString($.assessment.out), 'SHA-256')",
+                 # opaque ref only (artifact_id + digest + signature) — the reviewer fetches the narrative
+                 # server-side; the narrative TEXT never enters the pending record or execution state.
+                 "narrative_ref.$": "$.draft.out.narrative_ref",
                  "taskToken": sfn.JsonPath.task_token}),
             timeout=cdk.Duration.hours(24), result_path="$.approval")
         finalize = invoke("Finalize", compute.finalize,

@@ -3,7 +3,6 @@
   "context": {
     "env": "dev",
     "retention_profile": "sandbox-demo",
-    "kms": "aws-managed",
-    "@aws-cdk/core:enableStackNameDuplicates": false
+    "kms": "aws-managed"
   }
 }

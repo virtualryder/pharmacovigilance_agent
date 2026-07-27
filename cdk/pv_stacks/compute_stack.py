@@ -110,6 +110,9 @@ class ComputeStack(cdk.Stack):
         self.mask.add_to_role_policy(iam.PolicyStatement(
             actions=["comprehend:DetectPiiEntities"], resources=["*"]))
         data.sanitized_table.grant(self.mask, "dynamodb:PutItem")
+        # R3-2: the drafter also WRITES the sanitized store — it persists the CIOMS narrative under a
+        # signed ref so the narrative text never crosses Step Functions state (draft output pass-by-ref).
+        data.sanitized_table.grant(self.core, "dynamodb:PutItem")
         # sanitized-store readers (content channel)
         for f in (self.core, self.guards, self.assess):
             data.sanitized_table.grant(f, "dynamodb:GetItem")

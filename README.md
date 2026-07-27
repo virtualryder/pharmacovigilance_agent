@@ -35,11 +35,14 @@ financial-aid, and housing agents, from a reusable, manifest-driven template.
 > the trusted runtime injects it out-of-band (P0-3). A **deterministic guard set** (`workflow_guards.py`)
 > provides the machine-verifiable transition evidence a Step Functions controller branches on, so
 > masking / seriousness cannot be skipped by the model (P0-2). openFDA never fabricates on source
-> failure (P0-4). **Now also shipped: the full 7-stack AWS CDK set + Gate-B posture as switches
-> (`cdk/pv_stacks`, synth-validated by 22 assertions), release manifest, START-HERE, and pilot-readiness
-> plan.** Remaining to a captured-evidence release: the **live EP1** clean-account validation (the SA/customer
-> runs it; `DEPLOYMENT-GUIDE.md`) then cut `v0.1.0-pilot-rc1`. Suite: **107 offline tests** (control-plane
-> 73 + CDK 22). See `PV-PILOT-READINESS-PLAN.md`.
+> failure (P0-4). **Shipped: the full 7-stack AWS CDK set + Gate-B posture as switches (`cdk/pv_stacks`,
+> synth-validated by 22 assertions), release manifest, START-HERE, and pilot-readiness plan — and the
+> control plane is now live EP1-validated** (2026-07-27, env `pv-val1`, us-east-1): `validate_deployment.py`
+> PASS, the deterministic controller ran to the human sign-off gate, DuplicateHold held, and the **strict
+> PHI canary passed with 0 leaks** (Logs / X-Ray / DLQ / Step Functions history), then torn down +
+> residual-swept. Evidence: `evidence/EP1-VALIDATION.md`; tag `v0.1.0-pilot-rc1`. Suite: **109 offline
+> tests** (control-plane + CDK 22). Remaining before real PHI: QPPV SME sign-off, enterprise IdP round-trip,
+> independent security testing — see `PV-PILOT-READINESS-PLAN.md`.
 
 ---
 

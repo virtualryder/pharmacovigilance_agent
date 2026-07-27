@@ -86,6 +86,6 @@ pass-by-reference it should report **PASS** (0 hits everywhere).
 ## 5. Offline verification (no AWS)
 
 ```bash
-python -m pytest tests/ -q                    # 107/107: control-plane + CDK synthesis + pass-by-ref + canary logic
+python -m pytest tests/ -q                    # 109/109: control-plane + CDK synthesis + pass-by-ref + canary logic
 python -m pytest tests/test_cdk_stacks.py -q  # 22 CDK assertions (synthesizes all 7 stacks)
 ```

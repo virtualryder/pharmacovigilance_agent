@@ -11,29 +11,30 @@ this table, this table is correct and the other file is a bug.*
 | Field | Value |
 |---|---|
 | **Product** | Pharmacovigilance ICSR Intake **Assistant** (never an autonomous submitter or causality-committer) |
-| **Target pilot tag** | `v0.1.0-pilot-rc1` (RELEASE file) — **not yet cut**: awaiting the live EP1 validation |
-| **Offline test suite** | **107 / 107** passing (control-plane 85 + **22 CDK stack-synthesis** assertions) |
+| **Pilot tag** | `v0.1.0-pilot-rc1` (RELEASE file) — **cut after the live EP1 validation (2026-07-27)** |
+| **Offline test suite** | **109 / 109** passing (control-plane + **22 CDK stack-synthesis** assertions) |
 | **Deployment IaC** | AWS CDK, 7 stacks (`cdk/pv_stacks`, prefix `pv-`) — synthesizes to valid CloudFormation (in-suite `aws_cdk.assertions`) |
-| **Gate-B posture** | private networking + egress allowlist `.api.fda.gov` ONLY · customer-managed KMS · MFA-enforced pilot identity · tenant pin — **as CDK switches** |
-| **Live EP1 validation** | **NOT YET RUN** — the remaining step to captured evidence + a cut release (the customer/SA runs the 7-stack clean-account deploy + teardown; `DEPLOYMENT-GUIDE.md`) |
-| **Control plane** | signed `sanitized_ref` masking proof (P0-1) · token boundary (P0-3) · deterministic Step Functions controller + guards (P0-2) · no-fabrication openFDA (P0-4) · WORM hash-chained audit · human sign-off |
+| **Gate-B posture** | private networking + egress allowlist `.api.fda.gov` ONLY · customer-managed KMS · MFA-enforced pilot identity · tenant pin — **as CDK switches, live EP1-validated** |
+| **Live EP1 validation** | **DONE (2026-07-27, env `pv-val1`, us-east-1)** — 7/7 stacks incl. AgentCore ENFORCE; `validate_deployment.py` PASS; controller to the human gate; DuplicateHold terminal; **strict PHI canary PASS (0 leaks)**; MFA pool ON, 0 users; torn down + residual-swept. Record: `evidence/EP1-VALIDATION.md` |
+| **Control plane** | signed `sanitized_ref` masking proof (P0-1) · token boundary (P0-3) · deterministic Step Functions controller + guards (P0-2) · no-fabrication openFDA (P0-4) · R3-2 pass-by-reference **both directions** (case + narrative) · WORM hash-chained audit · human sign-off |
 | **Evidence source** | author-produced, synthetic data only — not independently audited or pen-tested |
 
 ## Count glossary
 
-- **107 offline tests** — the CI suite (85 control-plane + 22 CDK synthesis). Authoritative offline number.
+- **109 offline tests** — the CI suite (control-plane + 22 CDK synthesis). Authoritative offline number.
 - **32-check legacy demo** — the shell-engine governance demo; internal reference only, not pilot evidence.
 
 ## Known limitations (explicit)
 
-- **Live EP1 not yet captured** — the CDK synthesizes and the controls are unit-proven, but a real
-  clean-account deploy + teardown with captured evidence (happy path, DuplicateHold, PHI canary, load +
-  exactly-once replay) has not been run. That run cuts `v0.1.0-pilot-rc1`.
-- **Pass-by-reference (R3-2) implemented** — raw `source` never enters Step Functions state (ingest →
-  opaque `case_ref`; masked content reached server-side via the signed `sanitized_ref`), so the strict
-  PHI canary can PASS. Proven at synth (no raw/masked content in the state machine) + runtime
-  (`tests/test_pass_by_reference.py`); confirmed on the live EP1 run. (B5 tenant-scoped fetch on the
-  case store remains a follow-on.)
+- **Live EP1 captured on a disposable sandbox only** — the clean-account deploy + teardown with evidence
+  (validate PASS, controller to the human gate, DuplicateHold, strict PHI canary 0 leaks) ran on synthetic
+  data and was torn down; it is not a production ATO and used no real PHI. Record: `evidence/EP1-VALIDATION.md`.
+- **Pass-by-reference (R3-2) — both directions** — raw `source` never enters Step Functions state (ingest
+  → opaque `case_ref`; masked content reached server-side via the signed `sanitized_ref`), AND the drafted
+  CIOMS narrative is stored server-side under a signed ref (never in execution state). The live strict PHI
+  canary PASSED with 0 leaks. Proven at synth + runtime (`tests/test_pass_by_reference.py`,
+  `tests/test_draft_pass_by_reference.py`). The narrative-in-state gap was found by the live canary during
+  EP1 and fixed before the tag was cut. (B5 tenant-scoped fetch on the case store remains a follow-on.)
 - **One signing domain** — only `mask_pii` signs (the sanitized_ref); openFDA background is unsigned
   (authoritative-flag only). GA-2 domain-split is N/A (no second signer); signing the openFDA background
   is the relevant future option (`docs/KEY-MANAGEMENT.md`).

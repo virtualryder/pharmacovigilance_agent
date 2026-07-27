@@ -37,19 +37,25 @@ thresholds and reporting clocks** and their regulatory review · production **au
 
 ## Maturity (honest, code-accurate)
 
-**Present + hardened this cycle:** signed-`sanitized_ref` de-identification (P0-1), token boundary (P0-3),
+**Present + hardened:** signed-`sanitized_ref` de-identification (P0-1), token boundary (P0-3),
 deterministic guard set (P0-2), no-fabrication openFDA (P0-4), Cedar deny-by-default, WORM hash-chained
 audit, human separation-of-duties sign-off, supply-chain + governance-core integrity. **Plus the full
 7-stack AWS CDK set + Gate-B posture as switches** (private net + `.api.fda.gov` egress allowlist + CMK +
 MFA identity + tenant pin), **release discipline** (RELEASE + manifest + consistency gate), START-HERE,
-DEPLOYMENT-GUIDE, threat model, data-source policy, Gate-B checklist, pilot-readiness plan. Suite: **95
-offline tests** (85 control-plane + 22 CDK synthesis).
+DEPLOYMENT-GUIDE, threat model, data-source policy, Gate-B checklist, pilot-readiness plan. Suite: **109
+offline tests** (control-plane + 22 CDK synthesis).
 
-**Not yet (to a captured-evidence pilot):** the **live EP1** clean-account validation (the SA/customer
-runs it → cuts `v0.1.0-pilot-rc1`). The full operating-model doc bundle is now in `docs/` (KEY-MANAGEMENT,
-RETENTION-PROFILES, INCIDENT-RESPONSE, AUDIT-READINESS, MCP-GATEWAY, CONFIGURATION-WORKSHEET,
-SME-REVIEW-PACKET). Evidence to date is author-produced; independent security testing and a QPPV /
-drug-safety SME sign-off on the rules + narrative language are pre-production gates.
+**Live-validated (EP1, 2026-07-27, env `pv-val1`, us-east-1):** all Gate-B switches on; 7/7 stacks
+CREATE_COMPLETE incl. AgentCore ENFORCE; `validate_deployment.py` → PASS; happy-path to the human gate;
+DuplicateHold terminal; **strict PHI canary PASS — 0 leaks in Logs/X-Ray/DLQ/Step Functions history**
+(after fixing a real narrative-in-state R3-2 gap the canary caught); MFA pool ON with 0 users; torn down +
+residual-swept. Record: `evidence/EP1-VALIDATION.md`.
+
+**Not yet (pre-production):** enterprise **IdP** federation round-trip; **QPPV / drug-safety SME** sign-off
+on the seriousness rules, reporting clocks, and CIOMS language; independent security testing / pen test;
+prod-scale live load. Evidence to date is author-produced on synthetic data. The operating-model doc bundle
+is complete in `docs/` (KEY-MANAGEMENT, RETENTION-PROFILES, INCIDENT-RESPONSE, AUDIT-READINESS,
+MCP-GATEWAY, CONFIGURATION-WORKSHEET, SME-REVIEW-PACKET).
 
 ## Recommended pilot shape
 
