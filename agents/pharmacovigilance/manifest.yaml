@@ -167,8 +167,11 @@ tools:
         description: "Request qualified-person sign-off before submitting an ICSR; starts a separation-of-duties approval workflow. The agent can never submit directly."
         input:
           icsr_id: { type: string, description: "Case/record id." }
-          access_token: { type: string, description: "The requester's validated Cognito access token; the requester identity is derived from it (P0-5), never from a name field." }
-        required: [icsr_id, access_token]
+        required: [icsr_id]
+        # P0-3: NO credential field in any tool schema — the model can never be asked to supply a bearer
+        # token. The trusted runtime scrubs credential-shaped args and injects the requester's validated
+        # access token OUT-OF-BAND into this call only (lib/runtime/token_boundary.py); the Lambda still
+        # re-verifies it (identity.verify_access_token). Requester identity is derived at the boundary.
 
 policies:
   - { name: pv_reviewer_permit,          kind: permit, role_group: pv_reviewer }

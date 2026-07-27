@@ -23,8 +23,11 @@ def _coerce(e):
 
 def handler(event, context):
     e = _coerce(event)
-    if e.get("deidentified") is not True:
-        return {"prepared": False, "error": "refused: case is not de-identified (deidentified must be true)",
+    # Fail-closed (P0-1): masking must be PROVEN by a mask_pii-signed sanitized_ref, not a boolean.
+    import sanitized
+    if not sanitized.verify_ref(e.get("sanitized_ref")):
+        return {"prepared": False,
+                "error": "refused: de-identification not proven (a valid sanitized_ref signed by mask_pii is required; a boolean is not proof)",
                 "deidentified_input": e.get("deidentified")}
 
     assessment = str(e.get("assessment", "")).strip()

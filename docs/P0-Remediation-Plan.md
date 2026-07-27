@@ -12,6 +12,21 @@ Ground truth: every P0 below was **verified against the actual code**, not taken
 value. All ten findings reproduce. Status as of kickoff: all P0s `Not started` except the tracker + the
 capability matrix (this document).
 
+> **STATUS RECONCILIATION (2026-07-26) — the per-item "Not started" lines below are STALE; use this
+> banner as the current truth.** Landed since kickoff (git history): **P0-4 IAM least-privilege**
+> (`22f9b00`), **P0-6 network/VPC/CMK** (`18a58ee`, env-gated), **P0-8 supply-chain** (`bde6d97`, pinned
+> deps + non-root + SBOM), **P0-9 governance-core lock** (`574ee08`), **P0-7 maturity matrix**
+> (this doc). Landed THIS cycle (control-plane port from the financial-aid/housing agents): **signed
+> `sanitized_ref` de-identification proof** (the masking half of P0-1 — the spoofable boolean is no
+> longer accepted; `tests/test_sanitized_artifact.py`); a **token-schema boundary** (bearer token out of
+> every tool schema, injected out-of-band; `tests/test_token_boundary.py`); a **deterministic guard set**
+> (`workflow_guards.py` + `tests/test_workflow_guards.py`); confirmed **no-fabrication openFDA** (P0-3);
+> and a real **P0-7 role-lookup-by-prefix fix** in `lib/runtime/_obs_setup.sh`. Suite: **73 tests**.
+> **Still open:** the finalize/approve-through-the-canonical-writer + atomic exactly-once half of P0-1;
+> P0-5 live enterprise-IdP round-trip; P0-2 model→deterministic *Step Functions controller* wiring
+> (the guards it branches on exist; the IaC does not — needs the CDK port); P0-10 lighthouse scoping
+> (see `PILOT-SCOPE.md`). This tracker predates the port; per-item boxes below were not re-ticked.
+
 ---
 
 ## Execution waves

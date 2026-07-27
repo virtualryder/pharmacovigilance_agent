@@ -2,23 +2,35 @@
 
 [![CI](https://github.com/virtualryder/pharmacovigilance_agent/actions/workflows/ci.yml/badge.svg)](https://github.com/virtualryder/pharmacovigilance_agent/actions/workflows/ci.yml)
 
-> **Part of the Governed Agent Platform.** This agent is being consolidated into the [governed-agent-platform](https://github.com/virtualryder/governed-agent-platform) monorepo, where all four verticals share one versioned governance core (`governed-core`) and deploy via AWS CDK infrastructure-as-code (deployed + validated live) in place of the shell engine. This repo remains the standalone, shell-deployable reference.
+> **Part of the Governed Agent Platform.** This agent shares one versioned governance core (`governed-core`) with the sibling verticals and is being consolidated into the [governed-agent-platform](https://github.com/virtualryder/governed-agent-platform) monorepo, whose direction is AWS CDK infrastructure-as-code. **In this standalone repo the current deploy path is the shell engine (`lib/engine/`); a CDK stack set is not yet ported here** (see the financial-aid agent for the reference CDK port). Do not read "CDK IaC" as available in this repo today.
 
 > **Continuous validation.** On every push CI runs the **governance-core integrity gate** (`lib/verify_core.py`, so the shared core must match its pinned `core.lock` and drift cannot merge unnoticed), manifest render, the unit + eval suite, and a bug-class lint, plus a **supply-chain job** that audits the pinned runtime dependencies (`pip-audit`) and emits a CycloneDX SBOM. An **opt-in** end-to-end job (`.github/workflows/e2e.yml`, manual `workflow_dispatch`) deploys the spine to a sandbox AWS account, proves it live with the demo in ENFORCE, and tears it down — see the workflow header for one-time setup.
 
 
-A **governed** pharmacovigilance (drug-safety) ICSR intake agent for Healthcare & Life Sciences. It
-assembles and codes an adverse-event report, pulls authoritative FAERS background, de-identifies PHI,
-assesses seriousness and the regulatory reporting clock, drafts a CIOMS/ICSR narrative, and **pauses at
-a human sign-off gate** — a qualified safety reviewer makes and commits the submission; the agent never
-self-submits. Built on the same governed-hero-agent pattern as the benefits, financial-aid, and housing
-agents, from a reusable, manifest-driven template.
+A **governed** pharmacovigilance (drug-safety) ICSR intake **assistant** for Healthcare & Life Sciences.
+It assembles and codes an adverse-event report, pulls **aggregate FAERS background (reference context,
+non-PHI — never a case-level or causality source)**, de-identifies PHI, assesses seriousness and the
+regulatory reporting clock, **prepares** a causality/reportability determination for review, drafts a
+CIOMS/ICSR narrative, and **pauses at a human sign-off gate** — a qualified safety reviewer makes and
+commits the causality determination and the submission; the assistant never self-submits and never
+commits a causality determination. Built on the same governed-hero-agent pattern as the benefits,
+financial-aid, and housing agents, from a reusable, manifest-driven template.
 
 > **Accelerator, not a certification.** Reference implementation of the *pattern*. Not a
 > production-certified system. Computer-system validation (CSV/CSA), IdP federation, connectors to live
 > safety systems (Argus/ArisG/E2B gateway), licensed MedDRA/WHODrug dictionaries, and production
 > authorization to operate remain the adopter's responsibility. Seriousness thresholds and reporting
 > clocks here are **illustrative regulatory defaults** — configure per market and product.
+
+> **Control-plane hardening (ported from the financial-aid/housing agents).** De-identification is now
+> proven by a **mask_pii-signed `sanitized_ref`** with content binding — the spoofable `deidentified`
+> boolean is no longer accepted by any tool (P0-1). The bearer token is **out of every tool schema**;
+> the trusted runtime injects it out-of-band (P0-3). A **deterministic guard set** (`workflow_guards.py`)
+> provides the machine-verifiable transition evidence a Step Functions controller branches on, so
+> masking / seriousness cannot be skipped by the model (P0-2). openFDA never fabricates on source
+> failure (P0-4). Remaining to reach the financial-aid agent's pilot depth: the CDK stack set + Gate-B
+> posture, an EP1-style live validation, a tagged release + manifest, and the operating-model doc
+> bundle — see `PILOT-SCOPE.md`. Suite: **73 offline tests**.
 
 ---
 
@@ -42,9 +54,12 @@ intake_icsr -> openfda_lookup -> mask_pii -> assess_seriousness -> draft_narrati
 - **intake_icsr** — extract the non-PHI decision fields (suspect product, event terms, ICH E2B
   seriousness flags, expectedness) from the raw adverse-event source.
 - **openfda_lookup** — fetch **aggregate, non-PHI FAERS background** (report count + top MedDRA reaction
-  terms) for the suspect drug from the live **openFDA** drug-event API. The drug name is non-PHI, so this
-  runs *before* masking; the background gives the reviewer context. (The HCLS parallel to the other
-  agents' authoritative-data lookups.)
+  terms) for the suspect drug from the live **openFDA** drug-event API. This is **reference/context data
+  only** — spontaneous-report aggregates, **not** authoritative for a specific case, causality, or
+  incidence, and it never feeds the seriousness determination (which `assess_seriousness` derives solely
+  from the de-identified ICSR). On a source failure it returns `found:false` — it never substitutes a
+  fabricated aggregate (P0-4). The drug name is non-PHI, so this runs *before* masking, for reviewer
+  context.
 - **mask_pii** — fail-closed PHI de-identification (Amazon Comprehend `DetectPiiEntities`: name, DOB,
   address, identifiers…). If masking can't run, nothing downstream proceeds.
 - **assess_seriousness** — a deterministic rules engine (ICH E2B(R3) / 21 CFR 314.80 seriousness

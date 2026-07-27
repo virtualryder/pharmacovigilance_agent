@@ -36,12 +36,20 @@ def _coerce(event):
 
 
 def _draft(e):
-    if e.get("deidentified") is not True:
-        return {"error": "refused: case is not de-identified (deidentified must be true)",
+    # P0-1: draft ONLY from content proven de-identified by a mask_pii-signed sanitized_ref, and only
+    # if the case text binds to the signed digest (the model cannot substitute unmasked content).
+    import sanitized
+    ref = e.get("sanitized_ref")
+    if not sanitized.verify_ref(ref):
+        return {"error": "refused: de-identification not proven - a valid sanitized_ref signed by mask_pii is required (a boolean is not proof)",
                 "drafted_by": None, "deidentified_input": e.get("deidentified")}
-    case = e.get("case", "")
-    if not isinstance(case, str):
-        case = json.dumps(case, ensure_ascii=False)
+    raw_case = e.get("case", "")
+    if not isinstance(raw_case, str):
+        raw_case = json.dumps(raw_case, ensure_ascii=False)
+    case = sanitized.load_text(ref, candidate_text=raw_case)
+    if case is None:
+        return {"error": "refused: case content does not match the signed sanitized artifact",
+                "drafted_by": None, "sanitized_ref_verified": True, "content_bound": False}
     kwargs = dict(
         modelId=DRAFT_MODEL_ID,
         system=[{"text": _SYSTEM}],
@@ -74,6 +82,6 @@ def handler(event, context):
         # finalize_submission is never a real inline call — the human sign-off gate owns it.
         return {"error": "refused: finalize_submission must go through the human sign-off gate",
                 "icsr_id": e.get("icsr_id"), "submitted": False}
-    if "case" in e or "deidentified" in e:
+    if "case" in e or "deidentified" in e or "sanitized_ref" in e:
         return _draft(e)
     return {"ok": True, "received": e, "note": "pv core tool"}

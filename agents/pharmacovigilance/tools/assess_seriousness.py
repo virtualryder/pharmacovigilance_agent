@@ -73,15 +73,20 @@ def _detect(e, text):
 def handler(event, context):
     e = _coerce(event)
 
-    # Fail-closed: like draft_narrative, refuse to operate on non-de-identified input. Cedar's
-    # mask_before_assess forbid already blocks this at the gateway; the body refuses too (defense
-    # in depth) so PHI is never assessed even if policy were misconfigured.
-    if e.get("deidentified") is not True:
+    # Fail-closed (P0-1): refuse unless masking is PROVEN by a mask_pii-signed sanitized_ref. Cedar's
+    # mask_before_assess forbid remains as a coarse gateway gate; the authoritative control here is the
+    # verified reference — a `deidentified: true` boolean is never accepted as proof.
+    import sanitized
+    ref = e.get("sanitized_ref")
+    if not sanitized.verify_ref(ref):
         return {"assessed": False,
-                "error": "refused: case is not de-identified (deidentified must be true)",
+                "error": "refused: de-identification not proven (a valid sanitized_ref signed by mask_pii is required; a boolean is not proof)",
                 "deidentified_input": e.get("deidentified")}
 
-    text = _case_text(e)
+    # Content binding: only scan the case text if it hashes to the signed masked artifact. If it does
+    # not bind (substituted/unmasked content), scan nothing — explicit seriousness flags still apply.
+    raw = _case_text(e)
+    text = sanitized.load_text(ref, candidate_text=raw) or ""
     met = _detect(e, text)
     serious = len(met) > 0
 

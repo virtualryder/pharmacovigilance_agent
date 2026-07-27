@@ -1,5 +1,5 @@
 """Unit tests for the pharmacovigilance governed tools — contract + fail-closed behavior. No AWS."""
-from toolkit import call
+from toolkit import call, make_sanitized_ref
 
 
 def test_intake_extracts_fields():
@@ -14,7 +14,8 @@ def test_assess_fail_closed_on_unmasked():
 
 
 def test_assess_serious_expedited():
-    r = call("assess_seriousness", {"flags": {"hospitalization": True}, "expectedness": "unlisted", "deidentified": True})
+    r = call("assess_seriousness", {"flags": {"hospitalization": True}, "expectedness": "unlisted",
+                                    "sanitized_ref": make_sanitized_ref()})
     assert r["serious"] is True
     assert r["reporting_category"] == "EXPEDITED"
     assert r["clock_days"] == 15
@@ -27,12 +28,13 @@ def test_detect_duplicate():
 
 
 def test_record_causality_requires_rationale():
-    r = call("record_causality", {"assessment": "related", "deidentified": True})
+    r = call("record_causality", {"assessment": "related", "sanitized_ref": make_sanitized_ref()})
     assert r["prepared"] is False
 
 
 def test_record_causality_prepared():
-    r = call("record_causality", {"assessment": "probably related", "rationale": "positive dechallenge and temporal association", "deidentified": True})
+    r = call("record_causality", {"assessment": "probably related", "rationale": "positive dechallenge and temporal association",
+                                  "sanitized_ref": make_sanitized_ref()})
     assert r["status"] == "PREPARED"
     assert r["requires_senior_approval"] is True
 
