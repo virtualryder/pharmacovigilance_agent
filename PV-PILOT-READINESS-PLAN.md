@@ -48,14 +48,15 @@ expected to PASS (raw + masked content stay out of Step Functions state).
   MCP-GATEWAY, CONFIGURATION-WORKSHEET, SME-REVIEW-PACKET — is now complete in `docs/`.)
 
 **Gate D — before production.** Independent security testing / pen test; multi-account separation
-(workload vs evidence); GA-2 domain-split signing keys; asymmetric-KMS signing evaluation; MedDRA/WHODrug
+(workload vs evidence); asymmetric-KMS signing evaluation; optionally sign the openFDA background (would
+add a second signing domain); MedDRA/WHODrug
 coding + E2B(R3) XML gateway + Argus/ArisG integration; measured pilot metrics; production ATO/CSV.
 
 ## 3. Explicit not-yet-true (say these out loud)
 
 - No live EP1 evidence yet (Gate B).
 - Pass-by-reference (R3-2) **done** — raw + masked content stay out of SFN state (B5 tenant-scoped fetch is a follow-on).
-- Single-key provenance (GA-2 split is a follow-on).
+- One signing domain (mask_pii); openFDA background is unsigned (authoritative-flag). GA-2 split N/A.
 - No independent audit/pen test; no QPPV SME sign-off; synthetic data only.
 - MedDRA/WHODrug coding, E2B(R3) XML/gateway submission, Argus/ArisG, 21 CFR Part 11 CSV are adopter.
 

@@ -34,7 +34,9 @@ this table, this table is correct and the other file is a bug.*
   PHI canary can PASS. Proven at synth (no raw/masked content in the state machine) + runtime
   (`tests/test_pass_by_reference.py`); confirmed on the live EP1 run. (B5 tenant-scoped fetch on the
   case store remains a follow-on.)
-- **Single-key provenance** — not the financial-aid agent's GA-2 domain split (follow-on hardening).
+- **One signing domain** — only `mask_pii` signs (the sanitized_ref); openFDA background is unsigned
+  (authoritative-flag only). GA-2 domain-split is N/A (no second signer); signing the openFDA background
+  is the relevant future option (`docs/KEY-MANAGEMENT.md`).
 - Evidence is author-produced on synthetic data; **no independent audit / pen test** and **no
   credentialed drug-safety (QPPV) SME sign-off** on the seriousness rules + narrative language yet.
 - No MedDRA/WHODrug coding, no E2B(R3) XML/gateway submission, no Argus/ArisG integration, no

@@ -12,16 +12,20 @@
 | **Customer-managed KMS CMK** (`-c kms=customer-managed`) | Encrypts DynamoDB tables, Secrets Manager secrets, Lambda env vars, log groups, SNS | KMS key `alias/pv-<env>-data`, key rotation ON, `RETAIN` on stack delete | Automatic annual rotation (AWS-managed rotation of the CMK) |
 | **Cognito / OIDC** | Identity (pilot MFA, IdP federation) | Cognito user pool; enterprise IdP client secret is a Secrets Manager dynamic reference | Per the institution's IdP policy |
 
-## Provenance signing (single-key today)
+## Provenance signing (one signing domain)
 
-PV uses **one** HMAC signing key for both trust statements (the sanitized_ref and the openFDA
-provenance). Signer and verifier are Lambdas in the same deployment/account that already share a trust
-boundary, so a per-deploy shared secret binds each proof to its genuine minter. Absent the secret, every
-sign/verify fails closed (`authoritative:false`) — the assistant never proceeds on an unproven value.
+PV has exactly **one cryptographic signer**: `mask_pii`, which HMAC-signs the `sanitized_ref`
+(proof-of-masking). The openFDA background is **not signed** — it carries only an `authoritative` flag
+meaning "returned by a live lookup, not fabricated" (anti-fabrication, P0-4), so there is no second
+signing domain. Signer and verifier are Lambdas in the same deployment/account that share a trust
+boundary; the per-deploy secret binds the masking proof to its genuine minter. Absent the secret, every
+sign/verify fails closed — the assistant never proceeds on an unproven value.
 
-**Follow-on (GA-2 domain split):** the financial-aid agent splits the de-identification key from the
-source-provenance key so neither minter can forge the other's statement. For PV this is a hardening
-item, not a pilot blocker — documented in `PV-PILOT-READINESS-PLAN.md`.
+**Why GA-2 domain-split does not apply here:** the financial-aid agent splits its two *signing* keys
+(de-identification vs the signed source-of-record COA) because it has two signers. PV has one. The
+relevant follow-on is different: if openFDA background is later **cryptographically signed** (so a
+downstream consumer can verify it is unaltered from the API), that introduces a second domain and would
+then warrant a separate key. Until then, one key is correct, not a shortcut.
 
 ## Rotation procedure (signing secret)
 
