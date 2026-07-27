@@ -46,10 +46,10 @@ DEPLOYMENT-GUIDE, threat model, data-source policy, Gate-B checklist, pilot-read
 offline tests** (73 control-plane + 22 CDK synthesis).
 
 **Not yet (to a captured-evidence pilot):** the **live EP1** clean-account validation (the SA/customer
-runs it → cuts `v0.1.0-pilot-rc1`); the remaining operating-model docs (KEY-MANAGEMENT, RETENTION-PROFILES, INCIDENT-RESPONSE,
-AUDIT-READINESS, MCP-GATEWAY, CONFIGURATION-WORKSHEET, SME-REVIEW-PACKET). Evidence to date is
-author-produced; independent security testing and a QPPV / drug-safety SME sign-off on the rules +
-narrative language are pre-production gates.
+runs it → cuts `v0.1.0-pilot-rc1`). The full operating-model doc bundle is now in `docs/` (KEY-MANAGEMENT,
+RETENTION-PROFILES, INCIDENT-RESPONSE, AUDIT-READINESS, MCP-GATEWAY, CONFIGURATION-WORKSHEET,
+SME-REVIEW-PACKET). Evidence to date is author-produced; independent security testing and a QPPV /
+drug-safety SME sign-off on the rules + narrative language are pre-production gates.
 
 ## Recommended pilot shape
 

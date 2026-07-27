@@ -43,9 +43,9 @@ expected to PASS (raw + masked content stay out of Step Functions state).
   history (synth + runtime proven); the strict canary is expected to PASS on the EP1 run.
 - **Drug-safety SME (QPPV) sign-off** on the seriousness rules, reporting clocks, duplicate logic, the
   causality prepare-only boundary, and the CIOMS narrative language.
-- **Enterprise IdP** federation round-trip; **operating-model doc bundle** (KEY-MANAGEMENT,
-  RETENTION-PROFILES, INCIDENT-RESPONSE, AUDIT-READINESS, MCP-GATEWAY, CONFIGURATION-WORKSHEET,
-  SME-REVIEW-PACKET); HIPAA/21 CFR Part 11 data-handling assessment.
+- **Enterprise IdP** federation round-trip; HIPAA/21 CFR Part 11 data-handling assessment. (The
+  operating-model doc bundle — KEY-MANAGEMENT, RETENTION-PROFILES, INCIDENT-RESPONSE, AUDIT-READINESS,
+  MCP-GATEWAY, CONFIGURATION-WORKSHEET, SME-REVIEW-PACKET — is now complete in `docs/`.)
 
 **Gate D — before production.** Independent security testing / pen test; multi-account separation
 (workload vs evidence); GA-2 domain-split signing keys; asymmetric-KMS signing evaluation; MedDRA/WHODrug

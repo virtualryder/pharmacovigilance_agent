@@ -23,9 +23,9 @@ means the control is in the IaC and synth-validated; "live-validated" requires t
 1. **Run EP1** on a clean account with all switches (the SA/customer runs it) — capture happy path,
    DuplicateHold, PHI canary, load, exactly-once; tear down; record in `VALIDATED_RELEASE.md`; cut the tag.
 2. ~~Pass-by-reference (R3-2)~~ — **done** (ingest/case-store; raw + masked content out of SFN state).
-3. **Enterprise IdP** round-trip; **QPPV SME sign-off**; the remaining operating-model docs
-   (KEY-MANAGEMENT, RETENTION-PROFILES, INCIDENT-RESPONSE, AUDIT-READINESS, MCP-GATEWAY,
-   CONFIGURATION-WORKSHEET, SME-REVIEW-PACKET).
+3. **Enterprise IdP** round-trip and **QPPV SME sign-off** (`docs/SME-REVIEW-PACKET.md`). The
+   operating-model doc bundle is now complete: KEY-MANAGEMENT, RETENTION-PROFILES, INCIDENT-RESPONSE,
+   AUDIT-READINESS, MCP-GATEWAY, CONFIGURATION-WORKSHEET, SME-REVIEW-PACKET (all in `docs/`).
 4. **Gate D** (production): independent pen test, multi-account, GA-2 split keys, MedDRA/WHODrug + E2B
    gateway integration.
 
