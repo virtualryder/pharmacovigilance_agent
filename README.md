@@ -1,8 +1,15 @@
 # Pharmacovigilance Agent — Governed Agentic AI on Amazon Bedrock AgentCore
 
+**New here? → [`START-HERE.md`](START-HERE.md).**
+
+> **SUPPORTED DEPLOYMENT PATH.** The ONE supported path is **AWS CDK** (`cdk/`, 7 stacks, prefix `pv-`)
+> at the validated release tag [`v0.1.0-pilot-rc1`](https://github.com/virtualryder/pharmacovigilance_agent/releases/tag/v0.1.0-pilot-rc1)
+> — target tag, **cut after the live EP1 validation** (`RELEASE-MANIFEST.md`). The shell engine
+> (`lib/engine/`) is **legacy/internal reference only**.
+
 [![CI](https://github.com/virtualryder/pharmacovigilance_agent/actions/workflows/ci.yml/badge.svg)](https://github.com/virtualryder/pharmacovigilance_agent/actions/workflows/ci.yml)
 
-> **Part of the Governed Agent Platform.** This agent shares one versioned governance core (`governed-core`) with the sibling verticals and is being consolidated into the [governed-agent-platform](https://github.com/virtualryder/governed-agent-platform) monorepo, whose direction is AWS CDK infrastructure-as-code. **In this standalone repo the current deploy path is the shell engine (`lib/engine/`); a CDK stack set is not yet ported here** (see the financial-aid agent for the reference CDK port). Do not read "CDK IaC" as available in this repo today.
+> **Part of the Governed Agent Platform.** This agent shares one versioned governance core (`governed-core`) with the sibling verticals and is being consolidated into the [governed-agent-platform](https://github.com/virtualryder/governed-agent-platform) monorepo. It now ships its own **AWS CDK stack set** (`cdk/pv_stacks`) with the full Gate-B posture as switches; the shell engine remains a legacy internal reference.
 
 > **Continuous validation.** On every push CI runs the **governance-core integrity gate** (`lib/verify_core.py`, so the shared core must match its pinned `core.lock` and drift cannot merge unnoticed), manifest render, the unit + eval suite, and a bug-class lint, plus a **supply-chain job** that audits the pinned runtime dependencies (`pip-audit`) and emits a CycloneDX SBOM. An **opt-in** end-to-end job (`.github/workflows/e2e.yml`, manual `workflow_dispatch`) deploys the spine to a sandbox AWS account, proves it live with the demo in ENFORCE, and tears it down — see the workflow header for one-time setup.
 
@@ -28,9 +35,11 @@ financial-aid, and housing agents, from a reusable, manifest-driven template.
 > the trusted runtime injects it out-of-band (P0-3). A **deterministic guard set** (`workflow_guards.py`)
 > provides the machine-verifiable transition evidence a Step Functions controller branches on, so
 > masking / seriousness cannot be skipped by the model (P0-2). openFDA never fabricates on source
-> failure (P0-4). Remaining to reach the financial-aid agent's pilot depth: the CDK stack set + Gate-B
-> posture, an EP1-style live validation, a tagged release + manifest, and the operating-model doc
-> bundle — see `PILOT-SCOPE.md`. Suite: **73 offline tests**.
+> failure (P0-4). **Now also shipped: the full 7-stack AWS CDK set + Gate-B posture as switches
+> (`cdk/pv_stacks`, synth-validated by 22 assertions), release manifest, START-HERE, and pilot-readiness
+> plan.** Remaining to a captured-evidence release: the **live EP1** clean-account validation (the SA/customer
+> runs it; `DEPLOYMENT-GUIDE.md`) then cut `v0.1.0-pilot-rc1`. Suite: **95 offline tests** (control-plane
+> 73 + CDK 22). See `PV-PILOT-READINESS-PLAN.md`.
 
 ---
 

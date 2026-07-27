@@ -39,16 +39,18 @@ thresholds and reporting clocks** and their regulatory review · production **au
 
 **Present + hardened this cycle:** signed-`sanitized_ref` de-identification (P0-1), token boundary (P0-3),
 deterministic guard set (P0-2), no-fabrication openFDA (P0-4), Cedar deny-by-default, WORM hash-chained
-audit, human separation-of-duties sign-off, supply-chain + governance-core integrity. Suite: 73 offline
-tests.
+audit, human separation-of-duties sign-off, supply-chain + governance-core integrity. **Plus the full
+7-stack AWS CDK set + Gate-B posture as switches** (private net + `.api.fda.gov` egress allowlist + CMK +
+MFA identity + tenant pin), **release discipline** (RELEASE + manifest + consistency gate), START-HERE,
+DEPLOYMENT-GUIDE, threat model, data-source policy, Gate-B checklist, pilot-readiness plan. Suite: **95
+offline tests** (73 control-plane + 22 CDK synthesis).
 
-**Not yet (to reach the financial-aid agent's pilot depth):** the CDK stack set and Gate-B posture
-(private networking + egress allowlist + customer-managed KMS + MFA identity + tenant pin); an
-EP1-equivalent clean-account **live validation** with evidence + teardown; a tagged **release + manifest**
-+ consistency gate; and the operating-model doc bundle (threat model, START-HERE, VALIDATED_RELEASE,
-data-source policy, retention profiles, key management, incident response, audit readiness, config
-worksheet). Evidence to date is author-produced; independent security testing and an SME (QPPV /
-drug-safety) sign-off on the rules + narrative language are pre-production gates.
+**Not yet (to a captured-evidence pilot):** the **live EP1** clean-account validation (the SA/customer
+runs it → cuts `v0.1.0-pilot-rc1`); **pass-by-reference (R3-2)** so the strict PHI canary can PASS before
+real data; the remaining operating-model docs (KEY-MANAGEMENT, RETENTION-PROFILES, INCIDENT-RESPONSE,
+AUDIT-READINESS, MCP-GATEWAY, CONFIGURATION-WORKSHEET, SME-REVIEW-PACKET). Evidence to date is
+author-produced; independent security testing and a QPPV / drug-safety SME sign-off on the rules +
+narrative language are pre-production gates.
 
 ## Recommended pilot shape
 
