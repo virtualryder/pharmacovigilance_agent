@@ -26,8 +26,14 @@ jobs:
       - name: Render manifest (validates the single source of truth)
         run: python lib/engine/render.py agents/pharmacovigilance/manifest.yaml "$RUNNER_TEMP/build"
 
+      - name: Install CDK libs (REQUIRED - without these the 23 CDK security assertions SKIP)
+        run: python -m pip install --quiet -r cdk/requirements.txt
+
       - name: Unit tests + eval/regression harness
-        run: python -m pytest tests/ -q
+        run: python -m pytest tests/ -q -rs
+
+      - name: Assert the CDK security assertions actually RAN (not skipped)
+        run: python -m pytest tests/test_cdk_stacks.py -q --no-header
 
       - name: Lint (bug-class checks)
         run: ruff check --select E9,F63,F7,F82 agents lib tests

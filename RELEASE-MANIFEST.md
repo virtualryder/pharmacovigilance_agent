@@ -21,7 +21,7 @@ this table, this table is correct and the other file is a bug.*
 
 ## Count glossary
 
-- **109 offline tests** — the CI suite (control-plane + 22 CDK synthesis). Authoritative offline number.
+- **112 offline tests** — the CI suite (control-plane + 23 CDK synthesis + 3 CI-completeness gates). Authoritative offline number. Locally you see `111 passed, 1 skipped`: one gate asserts the CDK libs are installed and runs only inside CI.
 - **32-check legacy demo** — the shell-engine governance demo; internal reference only, not pilot evidence.
 
 ## Known limitations (explicit)
