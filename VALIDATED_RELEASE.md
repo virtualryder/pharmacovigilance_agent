@@ -5,8 +5,8 @@
 
 | Field | Value |
 |---|---|
-| Tag | `v0.1.0-pilot-rc1` — cut after the live EP1 validation below. Single source of truth: `RELEASE`. |
-| Commit SHA | the commit carrying tag `v0.1.0-pilot-rc1` (`git rev-list -n1 v0.1.0-pilot-rc1`) |
+| Tag | `v0.1.1-pilot-rc1` — cut after the live EP1 validation below. Single source of truth: `RELEASE`. |
+| Commit SHA | the commit carrying tag `v0.1.1-pilot-rc1` (`git rev-list -n1 v0.1.1-pilot-rc1`) |
 | Test count | **112** offline (control-plane + CDK synthesis + CI-completeness gates). Authoritative matrix: [`RELEASE-MANIFEST.md`](RELEASE-MANIFEST.md) |
 | Validation date | **2026-07-27** (live EP1, env `pv-val1`, us-east-1) |
 | Region | us-east-1 |

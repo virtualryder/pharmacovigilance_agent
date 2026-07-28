@@ -3,7 +3,7 @@
 **New here? → [`START-HERE.md`](START-HERE.md).**
 
 > **SUPPORTED DEPLOYMENT PATH.** The ONE supported path is **AWS CDK** (`cdk/`, 7 stacks, prefix `pv-`)
-> at the validated release tag [`v0.1.0-pilot-rc1`](https://github.com/virtualryder/pharmacovigilance_agent/releases/tag/v0.1.0-pilot-rc1)
+> at the validated release tag [`v0.1.1-pilot-rc1`](https://github.com/virtualryder/pharmacovigilance_agent/releases/tag/v0.1.1-pilot-rc1)
 > — target tag, **cut after the live EP1 validation** (`RELEASE-MANIFEST.md`). The shell engine
 > (`lib/engine/`) is **legacy/internal reference only**.
 
@@ -40,7 +40,7 @@ financial-aid, and housing agents, from a reusable, manifest-driven template.
 > control plane is now live EP1-validated** (2026-07-27, env `pv-val1`, us-east-1): `validate_deployment.py`
 > PASS, the deterministic controller ran to the human sign-off gate, DuplicateHold held, and the **strict
 > PHI canary passed with 0 leaks** (Logs / X-Ray / DLQ / Step Functions history), then torn down +
-> residual-swept. Evidence: `evidence/EP1-VALIDATION.md`; tag `v0.1.0-pilot-rc1`. Suite: **112 offline
+> residual-swept. Evidence: `evidence/EP1-VALIDATION.md`; tag `v0.1.1-pilot-rc1`. Suite: **112 offline
 > tests** (control-plane + CDK 22). Remaining before real PHI: QPPV SME sign-off, enterprise IdP round-trip,
 > independent security testing — see `PV-PILOT-READINESS-PLAN.md`.
 

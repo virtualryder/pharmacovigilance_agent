@@ -9,15 +9,19 @@ customer deployments.*
 ## 0. Supported path
 
 ```bash
-git checkout v0.1.0-pilot-rc1                 # a validated release tag, never main
-cd cdk && pip install -r requirements.txt
-cdk bootstrap aws://<account>/us-east-1       # once per account
+git checkout v0.1.1-pilot-rc1                 # a validated release tag, never main
+cd cdk && pip install -r requirements.txt     # PINNED: aws-cdk-lib==2.262.1, constructs==10.7.1
+npx --yes aws-cdk@2 bootstrap aws://<account>/us-east-1     # once per account
 ```
+
+> **Use `npx --yes`** (or install the CDK CLI globally). Without `--yes`, `npx aws-cdk@2` stops at an
+> interactive "Ok to proceed?" install prompt — in a hidden or CI shell that simply hangs with no
+> output and no error. Verified on a clean machine, 2026-07-28.
 
 ## 1. Deploy (full Gate-B posture)
 
 ```bash
-cdk deploy --all \
+npx --yes aws-cdk@2 deploy --all --require-approval never \
   -c env=pilot \
   -c retention_profile=pilot \
   -c kms=customer-managed \
@@ -53,20 +57,74 @@ reviewer approves at the `waitForTaskToken` gate → finalize (exactly-once `FIN
 
 ## 3. The EP1 validation (what cuts the release)
 
-On a clean account, deploy all switches, then capture: a happy-path SUCCEEDED run, a DuplicateHold
-run, the strict PHI canary (0 hits across Logs/X-Ray/DLQ/SFN history — R3-2 pass-by-reference keeps raw
-+ masked content out of state, so this should PASS), a load run, and an exactly-once replay storm. Then tear down
-and confirm zero residual. Record the results in `VALIDATED_RELEASE.md` and cut `v0.1.0-pilot-rc1`.
+On a clean account, deploy all switches, then capture: a happy-path run to the human gate, a
+DuplicateHold run, the strict PHI canary (0 hits across Logs/X-Ray/DLQ/SFN history — R3-2
+pass-by-reference keeps raw + masked content out of state, so this should PASS), a load run, and an
+exactly-once replay storm. Then tear down and confirm zero residual.
+
+Deploy the validation environment with **`retention_profile=sandbox-demo`**, *not* the `pilot` profile
+shown in §1:
+
+```bash
+npx --yes aws-cdk@2 deploy --all --require-approval never \
+  -c env=<env> -c retention_profile=sandbox-demo \
+  -c kms=customer-managed -c network_mode=private -c identity_mode=pilot -c tenant=<sponsor-id>
+
+python scripts/validate_deployment.py --env <env> --region us-east-1  # expect deployment_status: PASS
+python scripts/pii_canary.py --prefix pv-<env> --execute --strict     # expect verdict: PASS, leaks: {}
+```
+
+> **Why `sandbox-demo` for a validation run.** `retention_profile=pilot` applies **90-day GOVERNANCE**
+> Object Lock to the WORM vault — correct for a real pilot, but on a throwaway environment you intend to
+> destroy the same day it leaves locked objects you cannot clear (the audit writer is deliberately DENIED
+> `s3:BypassGovernanceRetention`). `sandbox-demo` is GOVERNANCE / 1 day.
+
+> **Both scripts run for minutes and print nothing until they finish — that is not a hang.** The
+> validator polls the Step Functions execution (~2–3 min); the canary waits 120s for telemetry to settle
+> before sweeping (~3 min). Redirected to a file, Python buffers, so the log stays 0 bytes until exit.
+
+> **Deploy time.** ~19 min for all 7 stacks (measured, `pv-val2`, 2026-07-28). PV is slower than the
+> sibling agents because `network_mode=private` provisions **AWS Network Firewall** for the
+> `.api.fda.gov` egress allowlist — PV genuinely reaches an external API, so it cannot use the
+> zero-egress design.
 
 ## 4. Teardown
 
 ```bash
-cdk destroy --all -c env=pilot
+# Stop executions parked at the human sign-off gate FIRST — a RUNNING execution blocks
+# deletion of the state machine and the destroy stalls.
+aws stepfunctions list-executions --state-machine-arn <arn> --status-filter RUNNING \
+  --query "executions[].executionArn" --output text | xargs -n1 -I{} \
+  aws stepfunctions stop-execution --execution-arn {} --cause "teardown"
+
+npx --yes aws-cdk@2 destroy --all --force -c env=pilot -c retention_profile=pilot
 ```
 
 The audit ledger + WORM vault + customer-managed CMK are **RETAIN'd** by design (the CMK alias deletes
 with the stack — find the retained key by tag and schedule deletion). VPC-attached Lambda stacks take
 ~15–30 min to delete (Hyperplane ENI release).
+
+### Completing a zero-residual teardown (validation environments only)
+
+`cdk destroy` alone does **not** reach zero — it retains the evidence resources on purpose. On a
+throwaway validation environment, clear them explicitly (verified on `pv-val2`, 2026-07-28):
+
+```bash
+E=val2
+aws dynamodb    delete-table     --table-name pv-$E-audit-ledger
+aws cognito-idp delete-user-pool --user-pool-id "$(aws cognito-idp list-user-pools --max-results 50 \
+                   --query "UserPools[?contains(Name,'pv-$E')].Id" --output text)"
+# PV leaves TWO provider log groups, not one: the AgentCore attachment provider AND the
+# network stack's custom-resource provider (the firewall-endpoint lookup). Delete both.
+aws logs describe-log-groups --log-group-name-prefix "/aws/lambda/pv-$E-" \
+  --query 'logGroups[].logGroupName' --output text | tr '\t' '\n' \
+  | xargs -n1 -I{} aws logs delete-log-group --log-group-name {}
+aws s3api       delete-bucket    --bucket "$(aws s3api list-buckets \
+                   --query "Buckets[?contains(Name,'pv-$E-data-wormvault')].Name" --output text)"
+```
+
+Then sweep every resource type, not just stacks — `describe-stacks` returning empty is **not** proof of
+zero residual.
 
 ## 4b. EP1 harness (turnkey)
 

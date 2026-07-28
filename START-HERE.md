@@ -1,7 +1,7 @@
 # START HERE — Pharmacovigilance ICSR Intake Assistant
 
 *One page. What this is, what's proven, how to evaluate it, and what a pilot looks like. Target
-validated release: **[`v0.1.0-pilot-rc1`](https://github.com/virtualryder/pharmacovigilance_agent/releases/tag/v0.1.0-pilot-rc1)**
+validated release: **[`v0.1.1-pilot-rc1`](https://github.com/virtualryder/pharmacovigilance_agent/releases/tag/v0.1.1-pilot-rc1)**
 (cut after the live EP1 validation; deploy tags, never `main`). Supported deployment path: **AWS CDK**
 (`cdk/`); the shell engine is legacy/internal.*
 
@@ -28,7 +28,7 @@ reference context, never a case-level or causality source.
 The control plane is ported from the proven financial-aid/housing pattern (signed sanitized-ref masking,
 token boundary, deterministic Step Functions controller). **What's proven today: the 95-test offline
 suite** — control-plane behavior + full CDK stack synthesis. **What's NOT proven yet: a live EP1
-clean-account run** with captured evidence; that run cuts `v0.1.0-pilot-rc1`. See `RELEASE-MANIFEST.md`.
+clean-account run** with captured evidence; that run cuts `v0.1.1-pilot-rc1`. See `RELEASE-MANIFEST.md`.
 
 ## Reading order by role
 
@@ -46,7 +46,7 @@ coding, E2B(R3) XML + FAERS/EudraVigilance gateway, Argus/ArisG integration.
 ## Status in one line
 
 Control-plane hardened + full CDK/Gate-B IaC, **live EP1-validated** (2026-07-27, `pv-val1`),
-**112 offline tests (incl. 23 CDK synthesis)**, tag `v0.1.0-pilot-rc1`. Evidence:
+**112 offline tests (incl. 23 CDK synthesis)**, tag `v0.1.1-pilot-rc1`. Evidence:
 `evidence/EP1-VALIDATION.md` (validate PASS, controller to the human gate, DuplicateHold, **strict PHI
 canary 0 leaks**). Next: a credentialed drug-safety (QPPV) SME sign-off, enterprise IdP round-trip, and
 independent security testing before real data.

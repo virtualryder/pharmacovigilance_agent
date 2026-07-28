@@ -1,4 +1,38 @@
-# EP1 — Live Clean-Account Validation (Pharmacovigilance ICSR Assistant)
+# EP1 — Live Clean-Account Validation
+
+> ## Re-validation — `pv-val2`, 2026-07-28 (supersedes the EP1 run below)
+>
+> `DEPLOYMENT-GUIDE.md` was re-walked end to end as a Solution Architect would, from the hardened code
+> (post `5833f98`), on a clean account. **Every gate passed.**
+>
+> | Check | Result |
+> |---|---|
+> | 7/7 CDK stacks (all Gate-B switches) | `CREATE_COMPLETE`, **1138s (~19 min)** |
+> | AgentCore Gateway + Cedar **ENFORCE** | attached as IaC, no post-deploy shell step |
+> | `validate_deployment.py --env val2` | **PASS** — `masking_control`, `guard_genuine`, `forged_ref_denied`, `ingest_pass_by_reference` all PASS |
+> | Happy path | ran the guarded controller and paused at the human sign-off gate |
+> | Strict PHI canary | **PASS**, `leaks: {}` (marker `CANARY-D17DA3CDAAAF-…`) |
+> | Identity | MFA `ON`, **0 users**, admin-create-only `True` |
+> | Egress posture | **1 Network Firewall · 2 NAT gateways · 11 VPC endpoints** — the `.api.fda.gov` allowlist, measured |
+>
+> **Two EP1 defects confirmed fixed on a clean deploy:**
+> 1. **`guard_genuine` returned PASS**, not the false FAIL seen in EP1. That failure was a Windows
+>    CP1252 read corrupting the em-dash in the signed `source` label before re-passing it to the guard;
+>    the UTF-8 read/write helpers hold.
+> 2. **The strict PHI canary found 0 leaks.** EP1 caught a *real* defect here — the CIOMS narrative text
+>    crossed Step Functions state from `DraftNarrative` onward. The pass-by-reference fix
+>    (`narrative_ref`) is now verified end to end on a fresh deployment, not just by regression test.
+>
+> **Runbook defects found and fixed in this pass:** `npx aws-cdk@2` hangs on an install prompt without
+> `--yes`; §3 didn't give the validation deploy switches, so an SA inherited `retention_profile=pilot`
+> (90-day Object Lock) on a throwaway environment; teardown didn't say to stop executions parked at the
+> human gate first; `cdk destroy` alone does not reach zero residual and no commands were given for the
+> retained resources; and nothing warned that the validator and canary buffer output for minutes.
+>
+> Account IDs redacted to `111122223333`. Torn down with a full residual sweep.
+
+---
+ (Pharmacovigilance ICSR Assistant)
 
 **Environment:** `pv-val1` · **Region:** us-east-1 · **Account:** `111122223333` (redacted) ·
 **Date:** 2026-07-27 · **Switches:** `network_mode=private kms=customer-managed identity_mode=pilot

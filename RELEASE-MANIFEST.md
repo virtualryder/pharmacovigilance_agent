@@ -11,7 +11,7 @@ this table, this table is correct and the other file is a bug.*
 | Field | Value |
 |---|---|
 | **Product** | Pharmacovigilance ICSR Intake **Assistant** (never an autonomous submitter or causality-committer) |
-| **Pilot tag** | `v0.1.0-pilot-rc1` (RELEASE file) — **cut after the live EP1 validation (2026-07-27)** |
+| **Pilot tag** | `v0.1.1-pilot-rc1` (RELEASE file) — **cut after the live EP1 validation (2026-07-27)** |
 | **Offline test suite** | **109 / 109** passing (control-plane + **22 CDK stack-synthesis** assertions) |
 | **Deployment IaC** | AWS CDK, 7 stacks (`cdk/pv_stacks`, prefix `pv-`) — synthesizes to valid CloudFormation (in-suite `aws_cdk.assertions`) |
 | **Gate-B posture** | private networking + egress allowlist `.api.fda.gov` ONLY · customer-managed KMS · MFA-enforced pilot identity · tenant pin — **as CDK switches, live EP1-validated** |
