@@ -111,6 +111,10 @@ All four. Meanwhile every `core.lock` still recorded the *same* `tree_sha256` (`
 repo's lock asserted "identical core across all verticals" while the files had demonstrably diverged.
 `v0.1.1-pilot-rc1` was tagged in that state.
 
+> **Current state (same day, after the fixes below):** all four repos — and the canonical package —
+> exit **0** at **v1.3.1**. The table above is the *before* record, kept because the failure mode
+> matters more than the fix: a blocking gate can be red for weeks and change nothing.
+
 So the causal chain for the exactly-once gap is:
 
 1. A correct mechanism existed and was blocking in CI.
@@ -125,9 +129,14 @@ unnoticed."
 
 ### What was done about it
 
-- Re-locked PV (v1.2.0, 43 files) and Benefits (v1.2.0, 45 files). Both now exit 0. **Note the
-  differing file counts**: the four cores genuinely are not identical, and the new locks make that
-  visible rather than hiding it behind a stale matching hash. EDU and Housing still need re-locking.
+- Re-locked **all four** repos to **v1.3.1**, and the canonical package with them. All five now exit 0
+  on their own integrity check. **Note the differing file counts** — PV 43, Benefits 45, Housing 45,
+  EDU 46: the four cores genuinely are not identical, and the new locks make that visible rather than
+  hiding it behind a stale matching hash.
+- **Corrected the lock's own header, which was the lie that made the drift invisible.** Every
+  `core.lock` opened with "Every vertical carries this identical core" while the four trees differed.
+  The header now states the truth: the lock is an *intra-repo* check, the version means "derived from
+  governed-core \<version\>", and cross-repo parity is a separate question answered by a separate tool.
 - Added **`tools/check_core_parity.py`** — the check that never existed. Per-repo integrity and
   cross-repo parity are different questions, and only the first was ever asked. It separates:
   - **CORE (byte-identical)** — the 8 modules that must never vary: hash chain, chain verification,
@@ -144,6 +153,47 @@ unnoticed."
 python tools/check_core_parity.py ../benefits_eligibility_agent \
        ../edu_financial_aid_agent ../Housing_eligibility_agent
 ```
+
+### The second finding: agent-vs-agent agreement was not sufficient either
+
+Running the new parity tool surfaced a failure mode the tool as first written could not see. The four
+agents agreed with each other on all eight byte-identical CORE modules — and **all four differed from
+`governed-agent-platform/core/src/governed_core/`, the package that is nominally their source.** The
+package had no exactly-once control at all: `_exactly_once_marker` 0 occurrences, `FINAL#` 0, a
+26-line `finalize_signoff.py`. Two different cores were both being published as "1.2.0".
+
+So the direction of staleness was the opposite of the intuition. The verticals were ahead; the
+canonical package was behind. A check that only compares verticals to each other would have gone on
+reporting green forever while the thing they are supposedly derived from rotted.
+
+Fixed:
+
+- **The control was promoted into the package** with domain-neutral wording, and the package re-locked
+  (**v1.3.1**). The package is now genuinely the source, not a stale copy.
+- **`check_core_parity.py --package` was added.** It checks the CORE set against the package, requires
+  the version pin to agree, and — the important inversion — **fails when a control is present in every
+  agent but absent from the package**, which is precisely the state that existed on 2026-08-03.
+  Verified to bite in both directions: blanking the control in the package fails it; a mismatched
+  version pin fails it; restoring both passes.
+- **A `core-parity` CI job now runs it**, in `governed-agent-platform` — the only repo that can see the
+  package and all four verticals at once. Each agent repo's CI still runs its own `verify_core.py`;
+  neither check can substitute for the other.
+
+### The third finding: the same fix-in-one-repo pattern, twice more
+
+Two further instances of the identical failure mode turned up while verifying the above — a fix landed
+in one repo and never propagated:
+
+1. **Cognito threat protection.** PV had migrated from the deprecated `advanced_security_mode` to
+   `feature_plan` + `standard_threat_protection_mode`. EDU, Housing and Benefits had not, and on
+   current CDK the *hardened* (`pilot`) posture is the one that will not synthesize — "you cannot
+   enable Advanced Security when feature plan is not Plus". EDU and Housing each had 2 red CDK tests
+   from this. Ported to all three; all four suites now green (127 / 106 / 156 / 162).
+2. **A committed AWS account id.** `governed-agent-platform` tracked `.bedrock_agentcore.yaml` and
+   `runtime/ssm-pol.json` — both *generated at deploy time* — containing the live account id seven
+   times. All four agent repos gitignored those same two files. Both are now untracked and ignored,
+   and **`tools/scan_account_ids.py` is a blocking CI step in all five repos** so the redaction rule is
+   a gate rather than a habit. Repository history still contains the id; see the open item below.
 
 ---
 
@@ -257,3 +307,11 @@ extending it with `agent_id` and `control_plane_version` is a small change and a
 - **C is roadmap.** The gate model is decided; the mechanism is not built.
 
 Anyone presenting this should say all three sentences.
+
+### Open items from this pass
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Account id in `governed-agent-platform` **history** | **Open — needs a decision.** HEAD is clean and CI now blocks re-introduction, but the id remains in prior commits. The repo is private. Scrubbing history means a force-push and invalidating existing clones, so it is deliberately not done unilaterally. |
+| 2 | Agents consume the package by **pinned reference** | **Open.** The package is now correct and parity is enforced, but the verticals still carry copies that CI *compares* rather than *imports*. Detection is not prevention; a real dependency (`governed-core==1.3.1`) is what removes the copy step. |
+| 3 | Live re-validation of exactly-once in PV | **Open.** `evidence/EP1-VALIDATION.md` records that the EP1 run predates the control. The 4 offline tests pass and are proven to fail when the gate is disabled, but no live run has exercised `FINAL#` in PV. |
