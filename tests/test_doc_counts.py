@@ -28,6 +28,13 @@ COUNT_PATTERNS = [
     re.compile(r"\b(\d{2,4}) offline tests?\b"),
     re.compile(r"\b(\d{2,4}) / \1\b"),
     re.compile(r"\b(\d{2,4})/\1\b"),
+    # Added 2026-08-03. The four patterns above only match "N offline tests" and "N/N", so a doc
+    # saying "the 109-test suite" or "109 tests" sailed straight through. It had:
+    # docs/GATE-B-CHECKLIST.md claimed a "**109-test suite**" against a true 144 and this gate
+    # reported clean. A count gate with a hole in it is worse than no gate, because the green
+    # result is read as confirmation.
+    re.compile(r"\b(\d{2,4})-test\b"),
+    re.compile(r"\b(\d{2,4}) tests?\b"),
 ]
 
 

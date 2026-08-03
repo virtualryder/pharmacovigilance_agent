@@ -1,115 +1,97 @@
 #!/usr/bin/env python3
-"""Cross-repo governance-core parity check.
+"""Cross-repo governance-core parity — under the DEPENDENCY model.
 
-WHY THIS EXISTS
----------------
-Each agent repo already ships `lib/verify_core.py` + `lib/core.lock`, which verify that the repo's
-own governance core matches its own pinned lock. That is an INTRA-repo integrity check. The lock's
-header states a stronger intent — "Every vertical carries this identical core... sync the identical
-core to every vertical" — but nothing ever verified it ACROSS repos.
+WHAT CHANGED, AND WHY THIS FILE LOOKS DIFFERENT NOW
+---------------------------------------------------
+This tool used to hash `lib/controls/*.py` in each agent repo and compare the copies. That was the
+right check for a world where the control plane was copied into four repositories. It is the wrong
+check now: as of 2026-08-03 the agents no longer carry the core. They install it:
 
-The consequence, found 2026-08-03: the exactly-once `FINAL#` finalization control existed in
-edu_financial_aid_agent and Housing_eligibility_agent and was absent from pharmacovigilance_agent and
-benefits_eligibility_agent, while all four `core.lock` files still recorded the SAME tree hash
-(cb0794c9...), i.e. all four claimed to carry an identical core. For pharmacovigilance the absence was
-an ICSR double-reporting risk. Nothing detected it for weeks, because per-repo integrity was never the
-same question as cross-repo parity.
+    governed-core @ https://github.com/virtualryder/governed-core/releases/download/
+                    v<ver>/governed_core-<ver>-py3-none-any.whl  --hash=sha256:<digest>
 
-This tool answers the cross-repo question. Run it from any checkout, pointing at the sibling repos.
+So the question worth asking changed. It is no longer "do four copies still match?" — pip and the
+artifact hash answer that. It is:
 
-    python tools/check_core_parity.py ../benefits_eligibility_agent ../edu_financial_aid_agent \
-                                      ../Housing_eligibility_agent
+    1. Does every repo pin the SAME version and the SAME artifact hash?
+    2. Is every pin hash-locked at all? A requirement without --hash is a copy with extra steps:
+       pip would accept whatever happens to be at that URL.
+    3. Has any repo quietly reintroduced a core module into lib/controls? Such a file shadows the
+       package on sys.path and re-opens the drift by the back door.
 
-Exit 0 = the CORE set is identical everywhere. Exit 1 = divergence, itemised.
+WHY THE ORIGINAL CHECK EXISTED (keep this history — it is the justification for the gate)
+----------------------------------------------------------------------------------------
+The exactly-once `FINAL#` finalization control existed in edu_financial_aid_agent and
+Housing_eligibility_agent and was absent from pharmacovigilance_agent and benefits_eligibility_agent,
+while all four `core.lock` files recorded the SAME tree hash — i.e. all four claimed an identical
+core. Every repo's CI was green. For pharmacovigilance the absence was an ICSR double-reporting risk.
 
-CANONICAL SOURCE
-----------------
-Agent-vs-agent agreement is necessary but not sufficient: four repos can agree with each other and all
-be stale relative to the package they are supposed to be derived from. That is exactly what was found
-on 2026-08-03 — the four agents agreed on `finalize_signoff.py` and ALL of them differed from
-`governed-agent-platform/core/src/governed_core/`, the package that is nominally the source of truth
-(the package had no exactly-once control at all). Pass `--package <path-to-governed_core>` and the CORE
-set is additionally checked against the package, and the pinned core version is required to agree.
-The default path assumes the sibling layout used in this workspace.
+Then, when the agents were finally compared against the package they derive from, all four agreed
+with each other and ALL FOUR differed from the package, which had no exactly-once control at all.
+The verticals were AHEAD of their own source. The same shape turned up a second time with
+`signoff_register` (GA-5 duplicate-submission protection: present in two of four, absent from the
+package and from the other two) — promoted into governed-core 1.4.0.
 
-WHAT IS AND IS NOT EXPECTED TO MATCH
-------------------------------------
-CORE_IDENTICAL — the security-critical modules that must be byte-identical in every vertical. A
-difference here is a defect, full stop.
+Usage:
 
-DOMAIN_SHAPED — modules that legitimately differ because they encode each domain's pipeline or rules.
-Reported for visibility, never failed on.
+    python tools/check_core_parity.py ../pharmacovigilance_agent ../benefits_eligibility_agent \
+                                      ../edu_financial_aid_agent ../Housing_eligibility_agent
+
+Exit 0 = every repo pins the same hash-locked core and none has re-copied a core module.
+Exit 1 = divergence, itemised.
 """
 import argparse
-import hashlib
 import pathlib
+import re
 import sys
 
-# Must be byte-identical everywhere: the hash chain, chain verification, the audit writer, identity
-# verification, and the separation-of-duties approval path.
-CORE_IDENTICAL = [
-    "lib/controls/evidence.py",
-    "lib/controls/verify_chain.py",
-    "lib/controls/write_audit.py",
-    "lib/controls/identity.py",
-    "lib/controls/approve_signoff.py",
-    "lib/controls/request_signoff.py",
-    "lib/controls/idp_group_mapper.py",
-    "lib/controls/mcp_client.py",
+# Modules that must come from the package in every vertical. A file with one of these names inside a
+# repo's lib/controls/ shadows the package on sys.path — that is how a local "fix" gets made and
+# never reaches the other three.
+CORE_MODULE_NAMES = [
+    "evidence", "verify_chain", "write_audit", "identity",
+    "approve_signoff", "request_signoff", "idp_group_mapper", "mcp_client",
+    "finalize_signoff", "signoff_register",
 ]
 
-# Files whose MECHANISM must exist everywhere but whose commentary is legitimately domain-specific
-# (PV frames the risk as ICSR double-reporting, benefits as committing an adverse action twice).
-# Byte-equality is the wrong test for these — assert the control is PRESENT instead. This is the
-# check that would have caught the 2026-08-03 exactly-once gap.
-CORE_BEHAVIOUR = {
-    "lib/controls/finalize_signoff.py": [
-        ("_exactly_once_marker", "the exactly-once commit-gate function"),
-        ("FINAL#", "the conditional-put marker key"),
-        ("attribute_not_exists", "the conditional put that makes it exactly-once"),
-    ],
-    "lib/controls/evidence.py": [
-        ("attribute_not_exists", "append-only conditional put on the audit chain"),
-        ("prev_hash", "hash-chain linkage"),
-    ],
-}
+# Legitimately domain-specific: these encode each domain's pipeline or rules and are expected to
+# differ. Reported for visibility, never failed on.
+DOMAIN_SHAPED = ["workflow_guards.py", "mask_pii.py", "case_store.py", "sanitized.py",
+                 "provenance.py", "ingest_case.py", "tenancy.py", "readability.py"]
 
-# Legitimately domain-specific. Reported, not failed.
-DOMAIN_SHAPED = [
-    "lib/controls/workflow_guards.py",
-    "lib/controls/mask_pii.py",
-    "lib/controls/case_store.py",
-    "lib/controls/sanitized.py",
-    "lib/controls/provenance.py",
-    "lib/controls/signoff_register.py",
-]
+REQ = "requirements-core.txt"
+WHEEL_RE = re.compile(r"governed_core-([0-9]+\.[0-9]+\.[0-9]+)-py3-none-any\.whl")
+HASH_RE = re.compile(r"--hash=sha256:([0-9a-f]{64})")
 
 
-def sha(path):
-    """Hash with normalised line endings, matching verify_core.py, so a Windows checkout and a
-    Linux CI runner agree."""
-    if not path.exists():
-        return None
-    data = path.read_bytes().replace(b"\r\n", b"\n")
-    return hashlib.sha256(data).hexdigest()
+def read_pin(repo):
+    """Return (version, sha256, error) for a repo's pinned core."""
+    p = repo / REQ
+    if not p.exists():
+        return None, None, "%s is missing — the core dependency is undeclared" % REQ
+    text = p.read_text(encoding="utf-8")
+    ver = WHEEL_RE.search(text)
+    dig = HASH_RE.search(text)
+    if not ver:
+        return None, None, "%s does not pin an exact governed_core wheel version" % REQ
+    if not dig:
+        return ver.group(1), None, (
+            "%s has no --hash= pin; pip would accept whatever is at that URL, which makes this a "
+            "copy with extra steps rather than a dependency" % REQ)
+    return ver.group(1), dig.group(1), None
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("others", nargs="*", help="paths to sibling agent repos")
-    ap.add_argument("--package",
-                    default="../governed-agent-platform/core/src/governed_core",
-                    help="path to the canonical governed_core package (the source of truth)")
+    ap.add_argument("repos", nargs="*", help="paths to the agent repos")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 
-    here = pathlib.Path(__file__).resolve().parent.parent
-    repos = [here] + [pathlib.Path(o).resolve() for o in args.others]
+    repos = [pathlib.Path(r).resolve() for r in args.repos]
     repos = [r for r in repos if r.exists()]
-
     if len(repos) < 2:
-        print("need at least two repos to compare; pass sibling paths as arguments")
+        print("need at least two repos to compare; pass their paths as arguments")
         return 0
 
     print("comparing %d repos:" % len(repos))
@@ -119,127 +101,65 @@ def main():
 
     failures = []
 
-    print("CORE (must be identical everywhere)")
-    for rel in CORE_IDENTICAL:
-        hashes = {r.name: sha(r / rel) for r in repos}
-        distinct = {h for h in hashes.values() if h is not None}
-        missing = [n for n, h in hashes.items() if h is None]
-        if missing:
-            failures.append("%s MISSING in: %s" % (rel, ", ".join(missing)))
-            print("  FAIL  %-42s missing in %s" % (rel, ", ".join(missing)))
-        elif len(distinct) > 1:
-            groups = {}
-            for n, h in hashes.items():
-                groups.setdefault(h[:8], []).append(n)
-            detail = " | ".join("%s: %s" % (k, ",".join(v)) for k, v in groups.items())
-            failures.append("%s DIVERGED — %s" % (rel, detail))
-            print("  FAIL  %-42s %d variants — %s" % (rel, len(distinct), detail))
+    print("PINNED CORE (every vertical must pin the same hash-locked artifact)")
+    pins = {}
+    for r in repos:
+        ver, dig, err = read_pin(r)
+        pins[r.name] = (ver, dig)
+        if err:
+            failures.append("%s: %s" % (r.name, err))
+            print("  FAIL  %-30s %s" % (r.name, err))
         elif not args.quiet:
-            print("  ok    %-42s identical" % rel)
+            print("  ok    %-30s %s  sha256:%s..." % (r.name, ver, dig[:12]))
+
+    versions = {v for v, _ in pins.values() if v}
+    digests = {d for _, d in pins.values() if d}
+    if len(versions) > 1:
+        detail = ", ".join("%s=%s" % (n, v) for n, (v, _) in sorted(pins.items()))
+        failures.append("core VERSION disagrees across repos — %s" % detail)
+        print("  FAIL  %-30s %d different versions: %s"
+              % ("version agreement", len(versions), detail))
+    elif not args.quiet and versions:
+        print("  ok    %-30s all repos pin %s" % ("version agreement", sorted(versions)[0]))
+
+    if len(digests) > 1:
+        failures.append("core artifact HASH disagrees across repos — same version, different "
+                        "artifact, which should be impossible for a published release")
+        print("  FAIL  %-30s %d different artifact hashes" % ("hash agreement", len(digests)))
+    elif not args.quiet and digests:
+        print("  ok    %-30s all repos pin the same artifact" % "hash agreement")
 
     print()
-    print("CORE BEHAVIOUR (mechanism must be present in every repo; commentary may differ)")
-    for rel, required in CORE_BEHAVIOUR.items():
-        for token, why in required:
-            absent = []
-            for r in repos:
-                p = r / rel
-                if not p.exists() or token not in p.read_text(encoding="utf-8", errors="ignore"):
-                    absent.append(r.name)
-            if absent:
-                failures.append("%s is MISSING %r (%s) in: %s"
-                                % (rel, token, why, ", ".join(absent)))
-                print("  FAIL  %-30s %-24s missing in %s"
-                      % (rel.split("/")[-1], token, ", ".join(absent)))
-            elif not args.quiet:
-                print("  ok    %-30s %-24s present everywhere"
-                      % (rel.split("/")[-1], token))
-
-    # --- canonical package -------------------------------------------------------------------
-    # Agent-vs-agent agreement does not prove the agents are current. Check the package too.
-    pkg = pathlib.Path(args.package)
-    if not pkg.is_absolute():
-        pkg = (here / args.package).resolve()
-
-    print()
-    if not pkg.exists():
-        print("CANONICAL PACKAGE — not found at %s (skipped; pass --package)" % pkg)
-    else:
-        print("CANONICAL PACKAGE (%s)" % pkg)
-        for rel in CORE_IDENTICAL:
-            leaf = rel.split("/")[-1]
-            canon = sha(pkg / "controls" / leaf)
-            if canon is None:
-                failures.append("%s is MISSING from the canonical package" % leaf)
-                print("  FAIL  %-42s absent from the package" % leaf)
-                continue
-            stale = [r.name for r in repos if sha(r / rel) != canon]
-            if stale:
-                failures.append("%s differs from the canonical package in: %s"
-                                % (leaf, ", ".join(stale)))
-                print("  FAIL  %-42s differs from package in %s" % (leaf, ", ".join(stale)))
-            elif not args.quiet:
-                print("  ok    %-42s matches the package" % leaf)
-
-        # The mechanism gate applies to the package as well — the package is where a control is
-        # supposed to originate, so a control present in every agent and absent from the package
-        # means the agents are the source and the package is stale. That inversion is the 2026-08-03
-        # finding and it must fail, not pass quietly.
-        for rel, required in CORE_BEHAVIOUR.items():
-            leaf = rel.split("/")[-1]
-            p = pkg / "controls" / leaf
-            body = p.read_text(encoding="utf-8", errors="ignore") if p.exists() else ""
-            for token, why in required:
-                if token not in body:
-                    failures.append("the canonical package is STALE: %s lacks %r (%s) while the "
-                                    "agents implement it" % (leaf, token, why))
-                    print("  FAIL  %-30s %-24s absent from the PACKAGE (package is stale)"
-                          % (leaf, token))
-                elif not args.quiet:
-                    print("  ok    %-30s %-24s present in the package" % (leaf, token))
-
-        # Version pin: every repo must declare the same derived-from core version as the package.
-        canon_ver = (pkg / "CORE_VERSION")
-        canon_ver = canon_ver.read_text(encoding="utf-8").strip() if canon_ver.exists() else None
-        if canon_ver:
-            bad = []
-            for r in repos:
-                lock = r / "lib" / "core.lock"
-                got = None
-                if lock.exists():
-                    for line in lock.read_text(encoding="utf-8", errors="ignore").splitlines():
-                        if line.startswith("version:"):
-                            got = line.split(":", 1)[1].strip()
-                            break
-                if got != canon_ver:
-                    bad.append("%s=%s" % (r.name, got))
-            if bad:
-                failures.append("core version pin disagrees with the package (%s): %s"
-                                % (canon_ver, ", ".join(bad)))
-                print("  FAIL  core version pin        package=%s but %s" % (canon_ver, ", ".join(bad)))
-            elif not args.quiet:
-                print("  ok    core version pin        all repos pinned to %s" % canon_ver)
+    print("NO CORE MODULE MAY BE COPIED BACK (a local copy shadows the package on sys.path)")
+    for r in repos:
+        ctrl = r / "lib" / "controls"
+        back = sorted(n for n in CORE_MODULE_NAMES if (ctrl / (n + ".py")).exists())
+        if back:
+            failures.append("%s has re-copied core module(s) into lib/controls: %s"
+                            % (r.name, ", ".join(back)))
+            print("  FAIL  %-30s %s" % (r.name, ", ".join(back)))
+        elif not args.quiet:
+            print("  ok    %-30s no core module copied locally" % r.name)
 
     print()
     print("DOMAIN-SHAPED (divergence expected; shown for visibility)")
     for rel in DOMAIN_SHAPED:
-        hashes = {r.name: sha(r / rel) for r in repos}
-        distinct = {h for h in hashes.values() if h is not None}
-        print("  %-44s %d variant(s)" % (rel, len(distinct)))
+        present = [r.name for r in repos if (r / "lib" / "controls" / rel).exists()]
+        print("  %-24s present in %d/%d repos" % (rel, len(present), len(repos)))
 
     print()
     if failures:
-        print("PARITY FAILED — %d core divergence(s):" % len(failures))
+        print("PARITY FAILED — %d divergence(s):" % len(failures))
         for f in failures:
             print("  -", f)
         print()
-        print("A file in the CORE set differing between agents means a control exists in one "
-              "regulated workload and not another. That is how the exactly-once finalization gap "
-              "reached production docs. Port the newer implementation, re-run "
-              "lib/regen_core_lock.py in each repo, and re-run this check.")
+        print("Bump every repo's requirements-core.txt to the same version AND hash together, and "
+              "delete any core module that has reappeared under lib/controls. A control that exists "
+              "in one regulated workload and not another is how the exactly-once finalization gap "
+              "reached production docs — twice.")
         return 1
 
-    print("PARITY OK — the core set is identical across all compared repos.")
+    print("PARITY OK — every repo pins the same hash-locked core and none has copied one back.")
     return 0
 
 

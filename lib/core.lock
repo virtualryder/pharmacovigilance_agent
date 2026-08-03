@@ -5,10 +5,10 @@
 # 'identical core' while the trees differed is how the exactly-once finalization gap hid for weeks.
 # The 'version' below means: derived from governed-core <version>. CROSS-repo parity is a separate
 # question answered by tools/check_core_parity.py. CI runs both and fails on either.
-version: 1.3.1
+version: 1.4.0
 files: 33
-tree_sha256: 50899b5cb3fd4ef3097a830bbb5c8c6fd176c89aab21fbde543b17d755514ad3
-10e2e117b01523891ca271a615ae36e9d5e52348fd7d642f66727602c1b8dcbe  lib/CORE_VERSION
+tree_sha256: 8f1b3fa19219c9c0c4a2764185f6c3d04d7f4f88bb498493a03e2a1b7d236fe1
+78b591400c56b7b67b8cb3b2b8a8e65e9093897f02ce0878e6b5405c68620fa7  lib/CORE_VERSION
 2490c78e8067798930870fcb6be5b99fb6316602f0e6958662970c6823cd4c2d  lib/connector/deploy_connector.sh
 56df0cb5464b5a5ca41766350382cdc63d9a6718fae69b08c73fd87724cd3e14  lib/connector/prove_connector.sh
 9b7968373ad47e2a6ceb7c83be44ba416c21117d4146470b38c00389a8864424  lib/connector/sor_api.py
