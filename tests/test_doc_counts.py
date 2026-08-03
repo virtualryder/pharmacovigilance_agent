@@ -22,8 +22,23 @@ COUNTED_DOCS = [
     "docs/GATE-B-CHECKLIST.md", "evidence/EP1-VALIDATION.md",
 ]
 
+# The GTM deck/doc generators. These were NOT gated until 2026-08-03, which is exactly how the
+# customer-facing PowerPoints came to quote a stale suite size while every markdown count was
+# green. The deck is the artifact a customer actually sees; it belongs in the gate.
+COUNTED_DOCS += [
+    "docs/generators/customer_deck.js",
+    "docs/generators/leadership_deck.js",
+    "docs/generators/regulatory.js",
+    "docs/generators/runbook.js",
+    "docs/generators/maintenance.js",
+    "docs/generators/guides.js",
+]
+
 # Any "<n> offline tests" / "<n> tests" / "<n>/<n>" style count in prose.
 COUNT_PATTERNS = [
+    # Deck stat tuples put the number and the word "tests" in SEPARATE string literals -
+    # ["144", "offline tests incl. 23 CDK assertions", MINT] - so no prose pattern matches.
+    re.compile(r'"(\d{2,4})"\s*,\s*"(?:offline|automated) tests?'),
     re.compile(r"\*\*(\d{2,4}) offline tests?\*\*"),
     re.compile(r"\b(\d{2,4}) offline tests?\b"),
     re.compile(r"\b(\d{2,4}) / \1\b"),
