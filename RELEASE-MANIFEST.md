@@ -12,7 +12,7 @@ this table, this table is correct and the other file is a bug.*
 |---|---|
 | **Product** | Pharmacovigilance ICSR Intake **Assistant** (never an autonomous submitter or causality-committer) |
 | **Pilot tag** | `v0.1.1-pilot-rc1` (RELEASE file) — **cut after the live EP1 validation (2026-07-27)** |
-| **Offline test suite** | **121 / 121** passing (control-plane + **23 CDK stack-synthesis** assertions) |
+| **Offline test suite** | **124 / 124** passing (control-plane + **23 CDK stack-synthesis** assertions) |
 | **Deployment IaC** | AWS CDK, 7 stacks (`cdk/pv_stacks`, prefix `pv-`) — synthesizes to valid CloudFormation (in-suite `aws_cdk.assertions`) |
 | **Gate-B posture** | private networking + egress allowlist `.api.fda.gov` ONLY · customer-managed KMS · MFA-enforced pilot identity · tenant pin — **as CDK switches, live EP1-validated** |
 | **Live EP1 validation** | **DONE (2026-07-27, env `pv-val1`, us-east-1)** — 7/7 stacks incl. AgentCore ENFORCE; `validate_deployment.py` PASS; controller to the human gate; DuplicateHold terminal; **strict PHI canary PASS (0 leaks)**; MFA pool ON, 0 users; torn down + residual-swept. Record: `evidence/EP1-VALIDATION.md` |
@@ -21,7 +21,7 @@ this table, this table is correct and the other file is a bug.*
 
 ## Count glossary
 
-- **121 offline tests** — the CI suite (control-plane + 23 CDK synthesis + 3 CI-completeness gates). Authoritative offline number. Locally you see `120 passed, 1 skipped`: one gate asserts the CDK libs are installed and runs only inside CI.
+- **124 offline tests** — the CI suite (control-plane + 23 CDK synthesis + 3 CI-completeness gates). Authoritative offline number. Locally you see `123 passed, 1 skipped`: one gate asserts the CDK libs are installed and runs only inside CI.
 - **32-check legacy demo** — the shell-engine governance demo; internal reference only, not pilot evidence.
 
 ## Known limitations (explicit)

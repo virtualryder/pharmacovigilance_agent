@@ -48,7 +48,14 @@ Start the controller (`pv-pilot-icsr-workflow`) with:
 `{case_id, requester, source, drug, case_key, known_keys}` — `source` is the raw adverse-event text,
 `drug` the suspect product. The pipeline: extract → openFDA background → mask → seriousness → duplicate
 check → (DuplicateHold if a duplicate) → draft narrative → INTENT audit → a **different** qualified
-reviewer approves at the `waitForTaskToken` gate → finalize (exactly-once `FINAL#` marker).
+reviewer approves at the `waitForTaskToken` gate → finalize.
+
+> **Known gap — exactly-once finalization is NOT implemented in this agent.**
+> `lib/controls/finalize_signoff.py` performs no conditional-put commit gate. The sibling
+> `edu_financial_aid_agent` and `Housing_eligibility_agent` implement an exactly-once `FINAL#` marker;
+> that control was never ported here. Until it is, a retried Lambda, a replayed execution, or a second
+> approval path can write a second COMMITTED record. For an ICSR workflow that is a double-reporting
+> risk. See [`docs/MULTI-AGENT-COMPOSITION.md`](docs/MULTI-AGENT-COMPOSITION.md) for the analysis.
 
 > **Zero-PHI note (R3-2):** call the **ingest-case** Lambda FIRST — it stores the raw `source` in the
 > encrypted case store and returns the opaque `case_ref` you pass to the workflow. Raw content never

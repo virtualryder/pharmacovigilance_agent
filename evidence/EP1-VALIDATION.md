@@ -123,19 +123,23 @@ customer-side Gate-C item.
 
 ## Load / exactly-once
 
-**Not covered by this run.** Concurrency and exactly-once replay-storm behavior under load were NOT
-exercised. What exists today is a single idempotency unit test (`tests/test_audit_chain.py::
-test_idempotent_replay`) against a fake DynamoDB — it demonstrates the conditional-put FINAL# marker
-logic in isolation, not behavior under concurrent writers or a replay storm. No load harness ships in
-this repository. Treat the exactly-once property as designed-and-unit-tested, not load-proven.
+**Not covered by this run — and the underlying control is absent.** Exactly-once finalization is
+**not implemented in this agent**. `lib/controls/finalize_signoff.py` contains no conditional-put
+`FINAL#` marker; the sibling EDU and Housing agents do, and the control was never ported here.
+`tests/test_audit_chain.py::test_idempotent_replay` exercises the *audit chain's* idempotency (which
+lives in the shared `evidence.py`), **not** finalize exactly-once. Concurrency and replay-storm
+behaviour under load were likewise not exercised, and no load harness ships in this repository.
+
+Do not describe this release as having exactly-once finalization. See
+[`../docs/MULTI-AGENT-COMPOSITION.md`](../docs/MULTI-AGENT-COMPOSITION.md) for how the gap arose.
 
 <!-- superseded claim, retained for traceability:
 Concurrency and exactly-once replay-storm behavior (idempotent finalize, single FINAL# marker) are proven
-by the offline suite (`tests/`) — **121/121 passing at the time of this run** (up from 107: +2 for the draft pass-by-reference
+by the offline suite (`tests/`) — **124/124 passing at the time of this run** (up from 107: +2 for the draft pass-by-reference
 regression guard). A live prod-scale load test is a customer-side Gate-B exit item.
 -->
 
-The offline suite was **121/121 passing at the time of this run**. A live prod-scale load test and a
+The offline suite was **124/124 passing at the time of this run**. A live prod-scale load test and a
 concurrency/replay-storm harness remain customer-side Gate-B exit items.
 
 ## Findings fixed during this EP1 run

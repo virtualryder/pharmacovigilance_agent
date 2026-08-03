@@ -42,7 +42,7 @@ financial-aid, and housing agents, from a reusable, manifest-driven template.
 > runbook defects. Both runs: `validate_deployment.py` PASS, the deterministic controller ran to the
 > human sign-off gate, DuplicateHold held, and the **strict PHI canary passed with 0 leaks**
 > (Logs / X-Ray / DLQ / Step Functions history), then torn down + residual-swept.
-> Evidence: `evidence/EP1-VALIDATION.md`; tag `v0.1.1-pilot-rc1`. Suite: **121 offline tests**
+> Evidence: `evidence/EP1-VALIDATION.md`; tag `v0.1.1-pilot-rc1`. Suite: **124 offline tests**
 > (control-plane + 23 CDK synthesis assertions). Remaining before real PHI: QPPV SME sign-off,
 > enterprise IdP round-trip, concurrency / replay-storm testing under load, and independent security
 > testing — see `PV-PILOT-READINESS-PLAN.md`.
@@ -128,7 +128,7 @@ npx --yes aws-cdk@2 deploy --all --require-approval never \
 
 Validate, then tear down with a zero-residual sweep — both scripted and documented in the
 deployment guide. Offline verification with no AWS account: `python -m pytest tests/ -q`
-(**121 tests**, including 23 CDK stack-synthesis security assertions).
+(**124 tests**, including 23 CDK stack-synthesis security assertions).
 
 <details>
 <summary><strong>Legacy shell engine — internal reference only, NOT the supported path</strong></summary>

@@ -26,7 +26,7 @@ reference context, never a case-level or causality source.
 ## Evidence provenance — read this honestly
 
 The control plane is ported from the proven financial-aid/housing pattern (signed sanitized-ref masking,
-token boundary, deterministic Step Functions controller). **What's proven today: the 121-test offline
+token boundary, deterministic Step Functions controller). **What's proven today: the 124-test offline
 suite** (control-plane behavior + 23 CDK stack-synthesis security assertions) **plus two live
 clean-account validation runs** — pv-val1 (2026-07-27) and pv-val2 (2026-07-28), the latter a full
 runbook re-walk that cut `v0.1.1-pilot-rc1`. Evidence: `evidence/EP1-VALIDATION.md`.
@@ -49,7 +49,7 @@ coding, E2B(R3) XML + FAERS/EudraVigilance gateway, Argus/ArisG integration.
 ## Status in one line
 
 Control-plane hardened + full CDK/Gate-B IaC, **live EP1-validated** (2026-07-27, `pv-val1`),
-**121 offline tests (incl. 23 CDK synthesis)**, tag `v0.1.1-pilot-rc1`. Evidence:
+**124 offline tests (incl. 23 CDK synthesis)**, tag `v0.1.1-pilot-rc1`. Evidence:
 `evidence/EP1-VALIDATION.md` (validate PASS, controller to the human gate, DuplicateHold, **strict PHI
 canary 0 leaks**). Next: a credentialed drug-safety (QPPV) SME sign-off, enterprise IdP round-trip, and
 independent security testing before real data.
