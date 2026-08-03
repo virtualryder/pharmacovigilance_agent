@@ -1,23 +1,34 @@
-"""Gate: the shared control-plane core must not drift, and documented controls must exist.
+"""Gate: the control-plane core must be intact, and documented controls must actually exist.
 
-Why this exists. `lib/controls/` is COPIED into four agent repositories, not shared as a package.
-On 2026-08-03 a hash comparison across all four found that a hardening control (exactly-once
-finalization, the FINAL# conditional-put commit gate) had landed in edu_financial_aid_agent and
+Why this exists. `lib/controls/` USED TO BE copied into four agent repositories. On 2026-08-03 a
+hash comparison across all four found that a hardening control (exactly-once finalization, the
+FINAL# conditional-put commit gate) had landed in edu_financial_aid_agent and
 Housing_eligibility_agent and was never ported here — while this repo's IaC comment, deployment
 guide, and evidence file all described it as present. Nothing detected that for weeks.
 
-Two gates follow from it:
+The copy is now gone: the core arrives as the pinned, hash-verified `governed-core` wheel
+(requirements-core.txt), and `tests/test_core_dependency.py` holds that property. This file keeps
+the two gates that are still meaningful under the dependency model:
 
-  1. The security-critical core must stay intact in this repo (a local integrity check; true
-     cross-repo parity needs the shared package described in docs/MULTI-AGENT-COMPOSITION.md).
+  1. The core we actually resolved still has its load-bearing pieces. Pinning a version is not the
+     same as the version being correct, so verify the mechanism, not the version string.
   2. Documentation must not claim a control the code does not implement. That is the failure that
-     actually reached a reviewer, and it is the cheaper one to catch.
+     actually reached a reviewer, and it is the cheaper one to catch. It is unaffected by where the
+     code comes from.
 """
 import pathlib
 import re
 
+import pytest
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-CONTROLS = ROOT / "lib" / "controls"
+
+governed_core = pytest.importorskip(
+    "governed_core",
+    reason="governed-core is not installed; run: pip install --require-hashes -r requirements-core.txt")
+
+# The core now resolves to the pinned package, not to a copy in this repo.
+CONTROLS = pathlib.Path(governed_core.controls_dir())
 
 # The modules that carry the cryptographic/ledger core. These are the ones that were byte-identical
 # across all four agents and must remain structurally intact here.

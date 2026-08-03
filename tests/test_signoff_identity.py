@@ -12,10 +12,15 @@ import time
 
 import pytest
 
+import governed_core
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-CONTROLS = ROOT / "lib" / "controls"
-if str(CONTROLS) not in sys.path:
-    sys.path.insert(0, str(CONTROLS))
+# identity / approve_signoff / request_signoff are CORE — from the pinned package. The agent's own
+# domain modules stay on the path too, core last so a declared domain override still wins.
+CONTROLS = pathlib.Path(governed_core.controls_dir())
+for _p in (ROOT / "lib" / "controls", CONTROLS):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 ISS = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_TEST"
 os.environ.update({"VERIFY_SIGNATURE": "false", "CLIENT_ID": "test-client",

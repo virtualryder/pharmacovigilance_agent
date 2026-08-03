@@ -29,15 +29,39 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def stage_lambda_bundle():
-    """Stage tools + shared controls into one Lambda asset dir (what the shell engine did per-zip)."""
+    """Stage tools + controls into one flat Lambda asset dir.
+
+    The governance controls come from the PINNED `governed-core` package, not from a copy in this
+    repo. That is the whole point: this repo once carried its own copy of these modules and the copy
+    was missing the exactly-once FINAL# finalization control that two sibling agents had, which for
+    an ICSR workflow is a regulator double-submission risk. A copy can silently diverge; a
+    hash-pinned wheel cannot.
+
+    Layering is deliberate and ordered:
+      1. governed_core.controls_dir()  — the shared, versioned control plane
+      2. lib/controls                  — this agent's domain-shaped modules (mask_pii, provenance,
+                                         workflow_guards, sanitized, case_store)
+      3. agents/.../tools              — the tool handlers
+
+    Later layers overwrite earlier ones, so a domain module could in principle shadow a core module.
+    It must not, and `tests/test_core_dependency.py` fails the build if one ever does — a silent
+    shadow would reintroduce the drift by the back door.
+    """
+    import governed_core
+
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".build", "lambda-src")
     shutil.rmtree(out, ignore_errors=True)
     os.makedirs(out)
-    for src in (os.path.join(REPO, "agents", "pharmacovigilance", "tools"),
-                os.path.join(REPO, "lib", "controls")):
+    for src in (str(governed_core.controls_dir()),
+                os.path.join(REPO, "lib", "controls"),
+                os.path.join(REPO, "agents", "pharmacovigilance", "tools")):
         for f in os.listdir(src):
             if f.endswith(".py"):
                 shutil.copy2(os.path.join(src, f), os.path.join(out, f))
+    # Stamp the staged bundle with the core version actually used, so a deployed artifact can be
+    # traced back to a released core rather than "whatever was in the tree that day".
+    with open(os.path.join(out, "CORE_VERSION"), "w", encoding="utf-8") as fh:
+        fh.write(governed_core.__version__ + "\n")
     return out
 
 

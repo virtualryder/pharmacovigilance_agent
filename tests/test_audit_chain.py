@@ -5,8 +5,13 @@ idempotent replay) exercised against a fake DynamoDB so no AWS is needed in CI."
 import importlib.util
 import pathlib
 
+import governed_core
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-CTRL = ROOT / "lib" / "controls"
+# evidence.py and verify_chain.py are CORE: they come from the pinned governed-core package, not
+# from a copy in this repo. That is the point of the dependency — the hash chain is identical in
+# every vertical because it is the same released artifact, not four files that happen to match.
+CTRL = pathlib.Path(governed_core.controls_dir())
 
 
 def _load(name):

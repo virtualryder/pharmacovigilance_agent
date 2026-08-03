@@ -66,14 +66,24 @@ def test_offline_count_in_docs_matches_the_suite():
         if not p.exists():
             continue
         text = p.read_text(encoding="utf-8")
+        lines = text.splitlines()
         for pat in COUNT_PATTERNS:
             for m in pat.finditer(text):
                 n = int(m.group(1))
                 # Only judge numbers in the plausible suite-size range; this
                 # avoids flagging years, ports, CFR sections and dollar figures.
-                if 60 <= n <= 999 and n != actual:
-                    line = text[: m.start()].count("\n") + 1
-                    problems.append(f"{rel}:{line} quotes {n}, suite has {actual}")
+                if not (60 <= n <= 999) or n == actual:
+                    continue
+                line = text[: m.start()].count("\n") + 1
+                # An evidence record states what was true DURING A PAST RUN. Rewriting those to
+                # today's number would falsify the record, so a count explicitly scoped to a
+                # historical run is exempt. The scoping must be explicit — either the phrase
+                # "at the time of this run" or an inline `<!-- count-gate:historical -->` marker —
+                # so this can never become a blanket excuse for a stale number.
+                context = lines[line - 1] if line - 1 < len(lines) else ""
+                if "at the time of this run" in context or "count-gate:historical" in context:
+                    continue
+                problems.append(f"{rel}:{line} quotes {n}, suite has {actual}")
     assert not problems, (
         "Test-count drift between the docs and the suite:\n  "
         + "\n  ".join(sorted(set(problems)))

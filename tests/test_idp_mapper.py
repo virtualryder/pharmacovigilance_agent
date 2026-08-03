@@ -4,8 +4,11 @@ nothing (deny-by-default holds); native Cognito groups are preserved."""
 import importlib.util
 import pathlib
 
+import governed_core
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-CTRL = ROOT / "lib" / "controls"
+# idp_group_mapper is CORE — served from the pinned governed-core package.
+CTRL = pathlib.Path(governed_core.controls_dir())
 
 spec = importlib.util.spec_from_file_location("idp_group_mapper", CTRL / "idp_group_mapper.py")
 m = importlib.util.module_from_spec(spec)

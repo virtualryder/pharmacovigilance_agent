@@ -3,7 +3,7 @@
 **Product:** Pharmacovigilance ICSR Intake **Assistant** (never an autonomous submitter or
 causality-committer). **Repo:** `github.com/virtualryder/pharmacovigilance_agent`. **Target tag:**
 `v0.1.1-pilot-rc1` (cut after live EP1 — **done 2026-07-27**). **Build state:** control-plane hardened +
-full CDK/Gate-B IaC, **live EP1-validated**; **128 offline tests** (control-plane + 23 CDK synthesis + 3 CI-completeness gates).
+full CDK/Gate-B IaC, **live EP1-validated**; **144 offline tests** (control-plane + 23 CDK synthesis + 3 CI-completeness gates + the core-dependency gate).
 **Owner:** David Ryder (AWS HCLS SA).
 
 ---
