@@ -130,9 +130,15 @@ and no load harness ships in this repository. That remains a customer-side Gate-
 commit gate was **not implemented in this agent**, despite the IaC comment, deployment guide and this
 file describing it as present. A control-plane parity check on 2026-08-03 found it, and the control was
 ported from `edu_financial_aid_agent` and covered by `tests/test_exactly_once_finalize.py` (4 tests,
-verified to fail when the gate is disabled). **This run therefore predates the control** — a re-run is
-required before citing live evidence for exactly-once behaviour. See
+verified to fail when the gate is disabled). **This run therefore predates the control.** See
 [`../docs/MULTI-AGENT-COMPOSITION.md`](../docs/MULTI-AGENT-COMPOSITION.md).
+
+> **RESOLVED 2026-08-03 — the re-run this note asked for has happened.** Exactly-once finalization is
+> now proven **live** on a clean deployment (`pv-val3`), including under real concurrency: 8
+> simultaneous finalizes produced **1** commit and **1** COMMITTED record. The duplicate-submission
+> control in `signoff_register` was proven in the same run. See
+> [`EP2-CONCURRENCY-LIVE.md`](EP2-CONCURRENCY-LIVE.md). The counts in *this* file still describe the
+> earlier run and are correct for it.
 
 <!-- superseded claim, retained for traceability:
 Concurrency and exactly-once replay-storm behavior (idempotent finalize, single FINAL# marker) are proven

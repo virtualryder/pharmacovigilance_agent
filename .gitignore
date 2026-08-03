@@ -29,3 +29,8 @@ node_modules/
 # CDK build output
 cdk/cdk.out/
 cdk/.build/
+
+# Deploy/destroy transcripts. *.log was already ignored but the stderr sidecar was not, and it
+# carries stack ARNs with the live account id. Caught by tools/scan_account_ids.py after the fact.
+*.log.err
+*.err
