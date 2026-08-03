@@ -84,10 +84,66 @@ Copying is not sharing. Three modules have diverged in ways that are **not** dom
 > double-reporting as the outcome `DuplicateHold` exists to prevent; this is a different route to the
 > same harm.
 >
-> **This is exactly the failure mode a shared control plane prevents.** A hardening fix (GA-5) landed
-> in two agents and never reached the other two, and nothing detected it — because there is no shared
-> package, no version pin between agents, and no drift gate. The fix is a port from
-> `edu_financial_aid_agent/lib/controls/finalize_signoff.py`, which is proven in two agents.
+> **RESOLVED 2026-08-03.** The control was ported into both `pharmacovigilance_agent` and
+> `benefits_eligibility_agent` from the EDU implementation, with `tests/test_exactly_once_finalize.py`
+> (4 tests, verified to fail when the gate is disabled). The four documents that had described it as
+> present are now accurate.
+
+### Root cause — the gate existed, was wired into CI, and had been red
+
+My first read was "there is no drift gate." **That was wrong, and the truth is more useful.**
+
+`lib/verify_core.py` + `lib/core.lock` already exist in every agent, and `core.lock`'s own header
+states the intended invariant: *"Every vertical carries this identical core, pinned to this version…
+Change the core → re-run regen_core_lock.py → sync to all verticals."* The check is wired into
+`ci.yml` as a **blocking** first step (no `continue-on-error`).
+
+It had been failing. Verified on 2026-08-03 against unmodified `HEAD`:
+
+| Repo | `verify_core.py` at HEAD |
+|---|---|
+| pharmacovigilance_agent | **exit 1** — 3 MODIFIED, 4 UNLOCKED core files |
+| benefits_eligibility_agent | **exit 1** |
+| edu_financial_aid_agent | **exit 1** |
+| Housing_eligibility_agent | **exit 1** |
+
+All four. Meanwhile every `core.lock` still recorded the *same* `tree_sha256` (`cb0794c9…`), so each
+repo's lock asserted "identical core across all verticals" while the files had demonstrably diverged.
+`v0.1.1-pilot-rc1` was tagged in that state.
+
+So the causal chain for the exactly-once gap is:
+
+1. A correct mechanism existed and was blocking in CI.
+2. It went red when core files changed without re-locking.
+3. Red was tolerated rather than fixed.
+4. Every subsequent divergence — including EDU/Housing gaining exactly-once while PV and Benefits did
+   not — merged unnoticed, because the gate that would have said so was already failing.
+
+**A control that is red and tolerated is worse than no control**: it produces the paperwork of
+assurance with none of the effect, and the README cited it as evidence that "drift cannot merge
+unnoticed."
+
+### What was done about it
+
+- Re-locked PV (v1.2.0, 43 files) and Benefits (v1.2.0, 45 files). Both now exit 0. **Note the
+  differing file counts**: the four cores genuinely are not identical, and the new locks make that
+  visible rather than hiding it behind a stale matching hash. EDU and Housing still need re-locking.
+- Added **`tools/check_core_parity.py`** — the check that never existed. Per-repo integrity and
+  cross-repo parity are different questions, and only the first was ever asked. It separates:
+  - **CORE (byte-identical)** — the 8 modules that must never vary: hash chain, chain verification,
+    audit writer, identity, the SoD approval path, MCP client, IdP mapper.
+  - **CORE BEHAVIOUR (mechanism must exist; commentary may differ)** — e.g. `finalize_signoff.py`
+    must contain `_exactly_once_marker`, `FINAL#` and `attribute_not_exists` in every repo, while its
+    docstring legitimately frames the risk per domain (ICSR double-reporting vs. committing an adverse
+    action twice). Byte-equality is the wrong test there; presence of the control is the right one.
+  - **DOMAIN-SHAPED** — reported for visibility, never failed on.
+
+  Verified to bite: removing the marker from one repo fails the check; restoring it passes.
+
+```bash
+python tools/check_core_parity.py ../benefits_eligibility_agent \
+       ../edu_financial_aid_agent ../Housing_eligibility_agent
+```
 
 ---
 

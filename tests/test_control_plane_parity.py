@@ -82,7 +82,29 @@ def test_docs_do_not_claim_exactly_once_finalization_unless_implemented():
             offenders.append(f"{p.relative_to(ROOT)}:{line_no}")
 
     if implemented:
-        assert True  # control is present; claims are legitimate
+        # Control IS present. Now the gate runs the other way: the docs must SAY so, and must not
+        # still carry the old "not implemented" disclosure. Both directions are drift.
+        documented = any(
+            "FINAL#" in p.read_text(encoding="utf-8", errors="ignore")
+            for p in [ROOT / "DEPLOYMENT-GUIDE.md", ROOT / "docs" / "THREAT-MODEL.md"]
+            if p.exists())
+        assert documented, (
+            "finalize_signoff.py implements the exactly-once FINAL# marker, but neither "
+            "DEPLOYMENT-GUIDE.md nor docs/THREAT-MODEL.md documents it. A control nobody can find "
+            "is a control an assessor will not credit."
+        )
+        stale = []
+        for p in [ROOT / "DEPLOYMENT-GUIDE.md", ROOT / "docs" / "THREAT-MODEL.md",
+                  ROOT / "cdk" / "pv_stacks" / "compute_stack.py"]:
+            if not p.exists():
+                continue
+            t = p.read_text(encoding="utf-8", errors="ignore")
+            if re.search(r"exactly-once[^.\n]{0,80}(is )?NOT implemented|"
+                         r"DOES NOT IMPLEMENT|KNOWN GAP: this grant", t, re.I):
+                stale.append(str(p.relative_to(ROOT)))
+        assert not stale, (
+            "the control is implemented but these still disclose it as a gap: " + ", ".join(stale)
+        )
     else:
         assert not offenders, (
             "finalize_signoff.py does NOT implement the exactly-once FINAL# marker, but these "

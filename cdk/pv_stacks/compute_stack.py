@@ -135,12 +135,10 @@ class ComputeStack(cdk.Stack):
         data.audit_table.grant(self.request_signoff, "dynamodb:PutItem",
                                "dynamodb:GetItem", "dynamodb:TransactWriteItems")
         data.worm_bucket.grant_put(self.request_signoff)
-        # finalize: writes the COMMITTED evidence record.
-        # KNOWN GAP: this grant includes TransactWriteItems in anticipation of the exactly-once
-        # FINAL# conditional-put marker, but lib/controls/finalize_signoff.py DOES NOT IMPLEMENT IT.
-        # The control exists in edu_financial_aid_agent and Housing_eligibility_agent and was never
-        # ported here. Until it is, a retried/replayed finalize can write a second COMMITTED record —
-        # an ICSR double-reporting risk. See docs/MULTI-AGENT-COMPOSITION.md.
+        # finalize: writes the COMMITTED evidence + the exactly-once FINAL# marker (conditional put).
+        # The marker is the single commit gate: a retried/replayed finalize finds it and returns the
+        # original submission rather than writing a second COMMITTED record. Implemented in
+        # lib/controls/finalize_signoff.py and covered by tests/test_exactly_once_finalize.py.
         data.audit_table.grant(self.finalize, "dynamodb:PutItem",
                                "dynamodb:GetItem", "dynamodb:TransactWriteItems")
         data.worm_bucket.grant_put(self.finalize)
