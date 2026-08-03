@@ -220,7 +220,7 @@ function circle(s, x, y, d, fill, txt, txtColor = WHITE, fs = 16) {
   const s = p.addSlide(); bg(s, CLOUD);
   eyebrow(s, "Evidence");
   title(s, "Proof, not slideware: 32 / 32 governance checks, live on AWS");
-  const stats = [["32/32", "governance checks pass", MINT], ["6", "controls native on AgentCore", TEAL], ["3", "regulated controls built & proven", AMBER], ["0", "residual on teardown", NAVY]];
+  const stats = [["121", "offline tests incl. 23 CDK assertions", MINT], ["6", "controls native on AgentCore", TEAL], ["3", "regulated controls built & proven", AMBER], ["0", "residual on teardown", NAVY]];
   const sw = 2.9, gap = 0.23, x0 = 0.62, y = 1.5;
   stats.forEach((st, i) => {
     const x = x0 + i * (sw + gap);
@@ -372,7 +372,7 @@ function circle(s, x, y, d, fill, txt, txtColor = WHITE, fs = 16) {
     s.addText(v[2], { x: x + w / 2 - 0.6, y: y + 1.36, w: 1.2, h: 0.3, align: "center", valign: "middle", color: NAVY, fontFace: BF, fontSize: 10, bold: true, margin: 0 });
   });
   s.addText("THE ASK", { x: 0.62, y: 4.65, w: 4, h: 0.35, fontFace: BF, fontSize: 12.5, bold: true, color: MINT, charSpacing: 2, margin: 0 });
-  const asks = [["1", "Internal demo", "Stand up the stack live and walk leadership through the 32-check proof."], ["2", "Sponsor workshops", "Take the pattern to HCLS accounts as a reference architecture."], ["3", "Scoped pilot", "A pilot on synthetic adverse-event cases with a named sponsor, boundary made explicit."]];
+  const asks = [["1", "Internal demo", "Stand up the stack live and walk leadership through the clean-account validation evidence."], ["2", "Sponsor workshops", "Take the pattern to HCLS accounts as a reference architecture."], ["3", "Scoped pilot", "A pilot on synthetic adverse-event cases with a named sponsor, boundary made explicit."]];
   asks.forEach((a, i) => {
     const x = 0.62 + i * 4.06;
     circle(s, x, 5.15, 0.5, MINT, a[0], NAVY, 16);

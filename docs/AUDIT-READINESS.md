@@ -36,5 +36,11 @@ control; walk the threat model as a mock question set; record gaps. Open items a
 
 ## Not yet proven
 
-No live EP1 evidence yet, no independent audit/pen test, no QPPV SME sign-off, no MedDRA/WHODrug coding
-or E2B gateway. Author-produced on synthetic data.
+**21 CFR Part 11:** a full element-by-element mapping — including the elements that are **not
+addressed today** (§11.50 signature manifestation, §11.70 signature-to-record binding, §11.200
+two-component signing) — is in [`PART-11-MAPPING.md`](PART-11-MAPPING.md), with sources.
+
+Live clean-account validation is complete (pv-val1 2026-07-27; pv-val2 2026-07-28 — see
+`../evidence/EP1-VALIDATION.md`). Still open: no independent audit or penetration test, no QPPV SME
+sign-off, no concurrency/replay-storm testing under load, no MedDRA/WHODrug coding or E2B gateway.
+All evidence is author-produced on synthetic data.

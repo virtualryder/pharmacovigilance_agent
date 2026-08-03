@@ -45,4 +45,6 @@ pinning, MFA identity, CMK coverage, observability alarms, gateway ENFORCE + the
 - **Pass-by-reference (R3-2) implemented**: the ingest-case Lambda + case store keep raw `source` out of
   Step Functions state (only an opaque `case_ref` travels), and masked text is reached server-side via
   the signed `sanitized_ref` — the strict PHI canary can PASS. (B5 tenant-scoped fetch is a follow-on.)
-- **Live EP1** clean-account validation is the remaining step to a captured-evidence release.
+- **Live clean-account validation is done** — pv-val1 (2026-07-27) and pv-val2 (2026-07-28, full
+  runbook re-walk). Captured evidence: [`../evidence/EP1-VALIDATION.md`](../evidence/EP1-VALIDATION.md).
+  The remaining live gap is concurrency / exactly-once replay-storm testing under load.

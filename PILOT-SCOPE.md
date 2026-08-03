@@ -43,7 +43,7 @@ audit, human separation-of-duties sign-off, supply-chain + governance-core integ
 7-stack AWS CDK set + Gate-B posture as switches** (private net + `.api.fda.gov` egress allowlist + CMK +
 MFA identity + tenant pin), **release discipline** (RELEASE + manifest + consistency gate), START-HERE,
 DEPLOYMENT-GUIDE, threat model, data-source policy, Gate-B checklist, pilot-readiness plan. Suite: **109
-offline tests** (control-plane + 22 CDK synthesis).
+offline tests** (control-plane + 23 CDK synthesis).
 
 **Live-validated (EP1, 2026-07-27, env `pv-val1`, us-east-1):** all Gate-B switches on; 7/7 stacks
 CREATE_COMPLETE incl. AgentCore ENFORCE; `validate_deployment.py` → PASS; happy-path to the human gate;

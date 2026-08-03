@@ -14,7 +14,7 @@ const body = [
   bullet([bold("Identity stack "), "— a stable Amazon Cognito user pool, app client, and test users. Long-lived; not touched by spine redeploys."]),
   bullet([bold("Governance spine "), "— the Cedar policy engine, AgentCore Gateway, tool Lambdas, Bedrock Guardrail, WORM audit stores, and the Step Functions human sign-off gate. Reproducible; stood up and torn down as a unit."]),
   bullet([bold("Runtime agent "), "— the generic Strands agent, containerized and deployed to AgentCore Runtime with a Cognito JWT inbound authorizer; its workflow prompt is rendered from the manifest."]),
-  P(["The whole spine deploys with one command, proves itself with a 32-check governance demo (and a 7/7 red-team harness), and tears down with zero residual. Everything is driven from ", code("agents/pharmacovigilance/manifest.yaml"), " — the engine, control library, and runtime are shared across agents."]),
+  P(["The whole spine deploys with one command, proves itself with a governance demo, and is covered by a 121-test offline suite (23 CDK security assertions) plus a live clean-account validation run, and tears down with zero residual. Everything is driven from ", code("agents/pharmacovigilance/manifest.yaml"), " — the engine, control library, and runtime are shared across agents."]),
   callout("Honesty boundary", [["This is an accelerator, not a validated or production-certified system. Authorization to operate, computer-system validation (CSV/CSA), IdP federation, validated connectors to the safety system of record (Argus / ArisG / E2B gateway), licensed MedDRA/WHODrug dictionaries, and regulatory review of narratives and reporting rules are sponsor responsibilities. See the Regulatory-Adherence Guide."]], G.colors.AMBER, "FBF3E7"),
 
   H1("2. Prerequisites"),
@@ -22,7 +22,7 @@ const body = [
   bullet([bold("An AWS account "), "with administrative credentials configured for the AWS CLI (", code("aws sts get-caller-identity"), " must succeed)."]),
   bullet([bold("Region "), "— us-east-1 (the reference deployment; Comprehend, Bedrock models, and AgentCore are all available there)."]),
   bullet([bold("Model access "), "— enable the Anthropic Claude models in Amazon Bedrock (the narrative-drafting tool defaults to the ", code("us.anthropic.claude-sonnet-4-5"), " cross-region inference profile)."]),
-  bullet([bold("Egress "), "— the ", code("openfda_lookup"), " tool calls the public openFDA drug-event (FAERS) API over HTTPS (no API key; rate-limited; fails soft to a deterministic aggregate if egress is blocked)."]),
+  bullet([bold("Egress "), "— the ", code("openfda_lookup"), " tool calls the public openFDA drug-event (FAERS) API over HTTPS (no API key; rate-limited; returns found:false / authoritative:false and never substitutes a fabricated aggregate if egress is blocked)."]),
   H2("2.2 Tooling"),
   table(["Tool", "Version / note"], [
     [code("aws"), "AWS CLI v2.30+ (validated on 2.33)"],

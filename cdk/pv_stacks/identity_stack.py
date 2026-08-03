@@ -30,8 +30,17 @@ class IdentityStack(cdk.Stack):
             # disposable validation loop stays scriptable. SMS is disabled in both modes.
             mfa=cognito.Mfa.REQUIRED if pilot else cognito.Mfa.OPTIONAL,
             mfa_second_factor=cognito.MfaSecondFactor(sms=False, otp=True),
-            advanced_security_mode=(cognito.AdvancedSecurityMode.ENFORCED if pilot
-                                    else cognito.AdvancedSecurityMode.OFF),
+            # Threat protection. Replaces the deprecated `advanced_security_mode`,
+            # which CDK now warns will be removed in the next major release AND
+            # which hard-fails synth on some 2.2xx versions with "you cannot enable
+            # Advanced Security when feature plan is not Plus" - i.e. the HARDENED
+            # posture was the one that would not synthesize. Feature plan is now
+            # set explicitly so the pilot posture is version-stable.
+            feature_plan=(cognito.FeaturePlan.PLUS if pilot
+                          else cognito.FeaturePlan.ESSENTIALS),
+            standard_threat_protection_mode=(
+                cognito.StandardThreatProtectionMode.FULL_FUNCTION if pilot
+                else cognito.StandardThreatProtectionMode.NO_ENFORCEMENT),
             password_policy=cognito.PasswordPolicy(
                 min_length=14, require_lowercase=True, require_uppercase=True,
                 require_digits=True, require_symbols=True),

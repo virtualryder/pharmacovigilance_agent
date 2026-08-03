@@ -36,13 +36,16 @@ financial-aid, and housing agents, from a reusable, manifest-driven template.
 > provides the machine-verifiable transition evidence a Step Functions controller branches on, so
 > masking / seriousness cannot be skipped by the model (P0-2). openFDA never fabricates on source
 > failure (P0-4). **Shipped: the full 7-stack AWS CDK set + Gate-B posture as switches (`cdk/pv_stacks`,
-> synth-validated by 22 assertions), release manifest, START-HERE, and pilot-readiness plan — and the
-> control plane is now live EP1-validated** (2026-07-27, env `pv-val1`, us-east-1): `validate_deployment.py`
-> PASS, the deterministic controller ran to the human sign-off gate, DuplicateHold held, and the **strict
-> PHI canary passed with 0 leaks** (Logs / X-Ray / DLQ / Step Functions history), then torn down +
-> residual-swept. Evidence: `evidence/EP1-VALIDATION.md`; tag `v0.1.1-pilot-rc1`. Suite: **112 offline
-> tests** (control-plane + CDK 22). Remaining before real PHI: QPPV SME sign-off, enterprise IdP round-trip,
-> independent security testing — see `PV-PILOT-READINESS-PLAN.md`.
+> synth-validated by 23 assertions), release manifest, START-HERE, and pilot-readiness plan — and the
+> control plane is live-validated on a clean account twice**: EP1 (2026-07-27, env `pv-val1`) and a full
+> SA-runbook re-walk (2026-07-28, env `pv-val2`, us-east-1) which cut the current tag and fixed five
+> runbook defects. Both runs: `validate_deployment.py` PASS, the deterministic controller ran to the
+> human sign-off gate, DuplicateHold held, and the **strict PHI canary passed with 0 leaks**
+> (Logs / X-Ray / DLQ / Step Functions history), then torn down + residual-swept.
+> Evidence: `evidence/EP1-VALIDATION.md`; tag `v0.1.1-pilot-rc1`. Suite: **121 offline tests**
+> (control-plane + 23 CDK synthesis assertions). Remaining before real PHI: QPPV SME sign-off,
+> enterprise IdP round-trip, concurrency / replay-storm testing under load, and independent security
+> testing — see `PV-PILOT-READINESS-PLAN.md`.
 
 ---
 
@@ -88,7 +91,7 @@ the `mask_before_*` forbids (no assessment/drafting on un-masked data), and `no_
 can never submit an ICSR). The Runtime discovers the gateway via SSM and validates the reviewer's Cognito
 JWT.
 
-## Tests — proven live in ENFORCE
+## Legacy shell engine — internal reference only (NOT the supported path)
 
 `bash lib/engine/demo.sh agents/pharmacovigilance` exercises the full governed workflow against the
 deployed system with Cedar in **ENFORCE**: deny-by-default (reviewer ALLOW / outsider DENY), the live
@@ -109,11 +112,33 @@ The higher-risk the action, the stronger the governance. Beyond intake/assessmen
 - **`commit_causality`** — a **consequential, senior-human-only** action the agent can **never** take.
   Forbidden by Cedar `no_self_causality_commit` — the same deny-by-default pattern as `no_self_submit`.
 
-## Deploy / prove / run / tear down
+## Deploy — the supported path (AWS CDK)
+
+This is the only path that carries captured live evidence and the only one to use for a pilot,
+an evaluation, or a demo. Full steps: [`DEPLOYMENT-GUIDE.md`](DEPLOYMENT-GUIDE.md).
+
+```bash
+git checkout v0.1.1-pilot-rc1                 # a validated release tag, never main
+cd cdk && pip install -r requirements.txt     # PINNED - the suite is only green at these versions
+npx --yes aws-cdk@2 bootstrap aws://<account>/us-east-1
+npx --yes aws-cdk@2 deploy --all --require-approval never \
+  -c env=pilot -c retention_profile=pilot -c kms=customer-managed \
+  -c network_mode=private -c identity_mode=pilot -c tenant=<sponsor-id>
+```
+
+Validate, then tear down with a zero-residual sweep — both scripted and documented in the
+deployment guide. Offline verification with no AWS account: `python -m pytest tests/ -q`
+(**121 tests**, including 23 CDK stack-synthesis security assertions).
+
+<details>
+<summary><strong>Legacy shell engine — internal reference only, NOT the supported path</strong></summary>
+
+The commands below drive the original shell engine (`lib/engine/`). It predates the CDK path, has
+**no captured pilot evidence**, and must not be used for a customer deployment or cited as proof.
+Retained only so the original governance demo remains reproducible internally.
 
 Requirements: AWS CLI v2 (admin, us-east-1), Python 3.12 + `pyyaml`, Bedrock model access, Bash
-(Git-Bash on Windows). One agent = one manifest (`agents/pharmacovigilance/manifest.yaml`) + domain tool
-bodies + Cedar policies; the engine, control library, and runtime are reused.
+(Git-Bash on Windows).
 
 ```bash
 bash lib/engine/deploy.sh  agents/pharmacovigilance   # spine: engine -> gateway -> targets -> policies -> ENFORCE
@@ -130,6 +155,8 @@ bash lib/connector/deploy_connector.sh agents/pharmacovigilance   # mock OAuth S
 bash lib/connector/prove_connector.sh  agents/pharmacovigilance   # proves OAuth + RS256/JWKS signature check + no secret + deny-by-default
 bash lib/engine/destroy.sh agents/pharmacovigilance   # zero-residual teardown (identity preserved)
 ```
+
+</details>
 
 > **Windows / Git-Bash note.** Deploy from a **path without spaces**, launch long runs detached with a
 > single space-free `Start-Process bash.exe -ArgumentList '/c/…/runner.sh'`, and stop orphaned sign-off

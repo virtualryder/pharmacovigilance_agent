@@ -1,4 +1,4 @@
-# Validated Release Record
+# Release Validation-Run Record (engineering evidence; not a CSV validation package)
 
 *Single source of truth for the current release tag is the repo-root `RELEASE` file, enforced by
 `tests/test_release_consistency.py`. Authoritative counts + limitations: `RELEASE-MANIFEST.md`.*

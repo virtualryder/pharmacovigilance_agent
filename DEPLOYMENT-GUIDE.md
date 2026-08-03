@@ -58,9 +58,13 @@ reviewer approves at the `waitForTaskToken` gate → finalize (exactly-once `FIN
 ## 3. The EP1 validation (what cuts the release)
 
 On a clean account, deploy all switches, then capture: a happy-path run to the human gate, a
-DuplicateHold run, the strict PHI canary (0 hits across Logs/X-Ray/DLQ/SFN history — R3-2
-pass-by-reference keeps raw + masked content out of state, so this should PASS), a load run, and an
-exactly-once replay storm. Then tear down and confirm zero residual.
+DuplicateHold run, and the strict PHI canary (0 hits across Logs/X-Ray/DLQ/SFN history — R3-2
+pass-by-reference keeps raw + masked content out of state, so this should PASS). Then tear down and
+confirm zero residual.
+
+> **Not part of this capture set.** A prod-scale load run and an exactly-once replay storm are **not**
+> performed here and no harness for them ships in this repository. Both are customer-side Gate-B exit
+> items — see `docs/GATE-B-CHECKLIST.md` B6. Do not describe the release as load-tested.
 
 Deploy the validation environment with **`retention_profile=sandbox-demo`**, *not* the `pilot` profile
 shown in §1:
@@ -145,5 +149,5 @@ pass-by-reference it should report **PASS** (0 hits everywhere).
 
 ```bash
 python -m pytest tests/ -q                    # 111 pass locally (+1 CI-only gate = 112): control-plane + CDK synthesis + pass-by-ref + canary logic
-python -m pytest tests/test_cdk_stacks.py -q  # 22 CDK assertions (synthesizes all 7 stacks)
+python -m pytest tests/test_cdk_stacks.py -q  # 23 CDK assertions (synthesizes all 7 stacks)
 ```

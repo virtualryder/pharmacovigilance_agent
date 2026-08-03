@@ -7,8 +7,8 @@ validated release: **[`v0.1.1-pilot-rc1`](https://github.com/virtualryder/pharma
 
 > **Evaluating for a pilot?** Read [`PV-PILOT-READINESS-PLAN.md`](PV-PILOT-READINESS-PLAN.md) and
 > [`RELEASE-MANIFEST.md`](RELEASE-MANIFEST.md) (authoritative counts + limitations). It states plainly
-> what is **not yet true**: no live EP1 evidence yet, no independent audit, no drug-safety SME sign-off,
-> synthetic data only.
+> what is **not yet true**: no independent audit or penetration test, no drug-safety SME (QPPV) sign-off,
+> no concurrency/replay-storm testing under load, no enterprise IdP round-trip, synthetic data only.
 
 ## What this is (and is not)
 
@@ -26,9 +26,12 @@ reference context, never a case-level or causality source.
 ## Evidence provenance — read this honestly
 
 The control plane is ported from the proven financial-aid/housing pattern (signed sanitized-ref masking,
-token boundary, deterministic Step Functions controller). **What's proven today: the 95-test offline
-suite** — control-plane behavior + full CDK stack synthesis. **What's NOT proven yet: a live EP1
-clean-account run** with captured evidence; that run cuts `v0.1.1-pilot-rc1`. See `RELEASE-MANIFEST.md`.
+token boundary, deterministic Step Functions controller). **What's proven today: the 121-test offline
+suite** (control-plane behavior + 23 CDK stack-synthesis security assertions) **plus two live
+clean-account validation runs** — pv-val1 (2026-07-27) and pv-val2 (2026-07-28), the latter a full
+runbook re-walk that cut `v0.1.1-pilot-rc1`. Evidence: `evidence/EP1-VALIDATION.md`.
+**What's NOT proven yet: concurrency and exactly-once replay-storm behavior under load**, an
+independent audit or penetration test, and a QPPV sign-off. See `RELEASE-MANIFEST.md`.
 
 ## Reading order by role
 
@@ -46,7 +49,7 @@ coding, E2B(R3) XML + FAERS/EudraVigilance gateway, Argus/ArisG integration.
 ## Status in one line
 
 Control-plane hardened + full CDK/Gate-B IaC, **live EP1-validated** (2026-07-27, `pv-val1`),
-**112 offline tests (incl. 23 CDK synthesis)**, tag `v0.1.1-pilot-rc1`. Evidence:
+**121 offline tests (incl. 23 CDK synthesis)**, tag `v0.1.1-pilot-rc1`. Evidence:
 `evidence/EP1-VALIDATION.md` (validate PASS, controller to the human gate, DuplicateHold, **strict PHI
 canary 0 leaks**). Next: a credentialed drug-safety (QPPV) SME sign-off, enterprise IdP round-trip, and
 independent security testing before real data.

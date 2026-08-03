@@ -10,13 +10,13 @@ means the control is in the IaC and synth-validated; "live-validated" requires t
 | **B3 · Pilot identity** — MFA ON (software token), threat protection ENFORCED, admin-create-only, zero users; OIDC IdP federation as IaC | `-c identity_mode=pilot` | ✅ | ✅ (`MfaConfiguration=ON`, software-token MFA, **0 users**) · ☐ enterprise IdP round-trip (Gate-C) |
 | **B4 · PHI-telemetry canary** — strict 0-hit gate across Logs/X-Ray/DLQ/SFN history | (harness) | ✅ R3-2 pass-by-reference (both directions) | ✅ **strict canary PASS — 0 leaks** (fixed a real narrative-in-state gap the canary caught; see `evidence/EP1-VALIDATION.md`) |
 | **B5 · Tenant isolation** — deployment-pinned tenant HMAC-signed into artifacts | `-c tenant=<sponsor-id>` | ✅ | ✅ (deployed with `tenant=pv-example-sponsor`) |
-| **B6 · Load / replay** — concurrency + exactly-once replay storm | (harness / offline) | ✅ (112 offline tests) | ☐ prod-scale live load (customer-side Gate-B exit) |
+| **B6 · Load / replay** — concurrency + exactly-once replay storm | (design + 1 unit test) | ◑ **Partial** — the conditional-put FINAL# marker is covered by a single idempotency unit test against a fake DynamoDB; there is **no concurrency test, no replay-storm test and no load harness** in this repo | ☐ prod-scale live load AND a concurrency/replay-storm harness (both customer-side Gate-B exit) |
 
 ## Controls proven offline now (independent of EP1)
 
 - Signed `sanitized_ref` masking proof; token boundary; deterministic guard set with DuplicateHold;
   no-fabrication openFDA; exact-ARN IAM + tamper-Deny; no users/passwords; retention profiles; gateway
-  ENFORCE with the PV tool/policy set — all asserted by the **109-test suite** (incl. 22 CDK assertions).
+  ENFORCE with the PV tool/policy set — all asserted by the **109-test suite** (incl. 23 CDK assertions).
 
 ## EP1 — done (2026-07-27, env `pv-val1`, us-east-1)
 

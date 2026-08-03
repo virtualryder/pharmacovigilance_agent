@@ -21,7 +21,7 @@ const body = [
   H1("2. Routine operations"),
   H2("2.1 Refresh the spine"),
   P("The safest way to apply most spine changes is a clean rebuild. Destroy leaves identity intact; deploy reuses it."),
-  ...codeBlock(["bash lib/engine/destroy.sh agents/pharmacovigilance", "bash lib/engine/deploy.sh  agents/pharmacovigilance", "bash lib/engine/demo.sh    agents/pharmacovigilance   # smoke test: expect 32/32", "bash lib/engine/redteam.sh agents/pharmacovigilance   # adversarial: expect 7/7"]),
+  ...codeBlock(["bash lib/engine/destroy.sh agents/pharmacovigilance", "bash lib/engine/deploy.sh  agents/pharmacovigilance", "bash lib/engine/demo.sh    agents/pharmacovigilance   # legacy-engine smoke test: expect all checks to pass", "bash lib/engine/redteam.sh agents/pharmacovigilance   # adversarial: expect 7/7"]),
   P([bold("Note: "), "run cycles serialized — never two concurrent spine deploys. Deploy from a path without spaces (§7)."]),
 
   H2("2.2 Change the seriousness rules or a tool"),
@@ -59,7 +59,7 @@ const body = [
   P("Observability is enabled on the Runtime (OpenTelemetry) and every governed step is logged with the acting identity."),
   bullet([bold("Runtime logs: "), code("aws logs tail /aws/bedrock-agentcore/runtimes/pv_runtime_agent-<id>-DEFAULT --since 1h"), " — per-step, identity-tagged, OTel-correlated (trace/span IDs)."]),
   bullet([bold("GenAI dashboard: "), "the CloudWatch GenAI Observability console surfaces agent/tool spans (requires CloudWatch Transaction Search enabled in the account)."]),
-  bullet([bold("Spine smoke test: "), code("bash lib/engine/demo.sh agents/pharmacovigilance"), " is the fastest health check — 32/32 means the whole governed path is intact; ", code("redteam.sh"), " (7/7) confirms it holds under attack."]),
+  bullet([bold("Spine smoke test: "), code("bash lib/engine/demo.sh agents/pharmacovigilance"), " is the fastest health check — a clean run means the whole governed path is intact; ", code("redteam.sh"), " (7/7) confirms it holds under attack."]),
   bullet([bold("Watch for: "), "repeated ", code("ACCESS DENIED"), " (identity/authorization drift), ", code("draft failed"), " (model access or inference-parameter issues), guardrail blocks on the narrative, openFDA egress falling back to the deterministic aggregate (network/rate-limit), and any ", code("assess"), " or ", code("record_causality"), " call arriving with ", code("deidentified=false"), " (a masking-order regression)."]),
 
   H1("5. Audit-evidence management"),
@@ -84,7 +84,7 @@ const body = [
     ["Control Lambda hits the wrong table/bucket (AccessDenied on audit)", "The control's resource env wasn't wired. The engine's wire_env step sets AUDIT_TABLE / AUDIT_BUCKET / PENDING_TABLE / SM_NAME on every control + sign-off Lambda; a full deploy re-applies it."],
     ["render.py FileNotFoundError on manifest.yaml (Windows)", "A helper changed directory before resolving the relative agent path. The helpers resolve the agent dir to an absolute path before cd; run them from the project root."],
     ["Runtime invoke returns 424 / gateway not found", "SSM parameter missing or stale. Confirm /pv-pharmacovigilance/gateway-url exists and matches the live gateway; the deploy sets MSYS_NO_PATHCONV=1 so the name isn't mangled on Windows."],
-    ["openfda_lookup returns 'fallback aggregate'", "openFDA egress failed or was rate-limited (or the drug had no FAERS results). The tool fails soft to a deterministic non-PHI aggregate so the governed workflow still proceeds; confirm outbound HTTPS if live background is required."],
+    ["openfda_lookup returns found:false / authoritative:false", "openFDA egress failed or was rate-limited, or the drug had no FAERS results. This is CORRECT, intended behaviour: the tool returns an explicit not-found result with no substituted aggregate — it must never fabricate background data (P0-4). The governed workflow proceeds with the absence recorded and stamped in provenance. If live background is required, confirm outbound HTTPS egress to api.fda.gov is permitted by the egress allowlist."],
     ["'draft failed: ValidationException ... temperature and top_p'", "The model rejects both parameters together via Converse. Send temperature only."],
     ["agentcore configure/launch crashes with a Unicode or console error", "Windows codepage. Export PYTHONIOENCODING=utf-8, PYTHONUTF8=1, AGENTCORE_SUPPRESS_RECOMMENDATION=1 (set in the helper scripts)."],
     ["'Invalid version id' during bucket teardown", "Git-Bash trailing \\r on the version id. Pipe list output through tr -d '\\r' (handled in destroy.sh)."],

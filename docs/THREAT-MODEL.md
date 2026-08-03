@@ -22,7 +22,10 @@ signed `sanitized_ref`, so the strict PHI canary can PASS. Proven at synth (no r
 state machine — `tests/test_cdk_stacks.py`) + runtime (`tests/test_pass_by_reference.py`); confirmed on
 the live EP1 canary run. (B5 tenant-scoped fetch on the case store is a follow-on.)
 
-**Residual risks (tracked, not closed).** **Live EP1 evidence** (canary, load, exactly-once) is unrun;
+**Residual risks (tracked, not closed).** Live clean-account validation IS done (pv-val1 2026-07-27,
+pv-val2 2026-07-28) and the strict PHI canary passed — see `evidence/EP1-VALIDATION.md`. Still unrun:
+**concurrency and exactly-once replay-storm testing under load** (only a single idempotency unit test
+against a fake DynamoDB exists today);
 independent penetration test + source/Cedar/prompt-injection review; enterprise IdP/MFA round-trip;
 multi-account separation; QPPV SME sign-off. All current evidence is author-produced on synthetic data —
 see `RELEASE-MANIFEST.md`.
