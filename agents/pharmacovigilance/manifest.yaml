@@ -197,3 +197,31 @@ honesty_boundary:
   stubbed: [meddra_code, whodrug_code, connect_safety_system]
   connectors: "MedDRA/WHODrug licensed dictionaries and safety-system (Argus/ArisG/E2B gateway) integration is customer engagement work"
   not_certified: true
+
+# --- Minimum Bar gates 4/5/8/9 — declarative blocks (added 2026-08-20) -------
+# Capabilities already exist in aegis platform_core (model_gateway grounding,
+# token_budget, prod/manifest_signing); these blocks DECLARE them per-agent so
+# CI and the delivery gate (prod/manifest_validator.delivery_check) can enforce
+# the bar. render.py ignores unknown top-level keys, so deploys are unaffected.
+
+grounding:                       # bar 4 — declared grounding source + threshold
+  source: openfda                # openfda_lookup provenance (test_openfda_provenance)
+  grounding_threshold: 0.85      # pilot-tunable; PQ evidence sets the floor
+  relevance_threshold: 0.80
+
+budget:                          # bar 5 — hard cap; regulated workload fails closed
+  monthly_token_cap: 5000000
+  inference_profile: pv-agent
+  cap_behavior: hard
+  alert_thresholds: [0.6, 0.85, 1.0]
+
+evals:                           # bar 6 — suite + declared rate (gates, not samples)
+  suite: tests/
+  min_pass_rate: 1.0
+
+pack: HCLS                       # bar 9 — pack compatibility declaration
+
+signing:                         # bar 8 — signed by a known publisher
+  publisher: virtualryder
+  algorithm: rsassa-pss-sha256   # platform_core/prod/manifest_signing.py
+  signature: null                # UNSIGNED — delivery gate blocks until signed
