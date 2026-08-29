@@ -41,6 +41,21 @@ lookup needs **no API key** (public). Switches:
 | `network_mode=private` | VPC + Network Firewall egress allowlist = `.api.fda.gov` ONLY; tools in isolated subnets |
 | `identity_mode=pilot` | MFA ON (software token), threat protection ENFORCED, admin-create-only, zero users |
 | `tenant=<sponsor-id>` | HMAC-signed into sanitized artifacts (Gate-B B5) |
+| `guardrail_id=<id>` `guardrail_version=<v>` | Arms the platform Bedrock guardrail on the drafter (`draft_narrative`). Every generation is guardrail-assessed; an intervention fails closed (no `narrative_ref`) and the case routes to `ManualReview`. Omit → unguarded (sandbox only). |
+| `approvals_client_id=<cognito-client-id>` | Client id the `approve-signoff` Lambda verifies reviewer access tokens against (identity pool + `pv_reviewer` group wired from the identity stack). |
+
+### Observability & governance evidence (parity with the benefits baseline, governed-core ≥ 1.5.0)
+
+IaC on every deploy — no post-deploy instrumentation: **X-Ray** `Tracing.ACTIVE` on every governed
+tool + the gateway; **Step Functions** execution logging (`ALL`, `includeExecutionData=false`) into a
+1-year CMK-when-present group at `/aws/states/<prefix>-icsr-workflow`; unconditional 1-year Lambda log
+retention; a **data-only CloudTrail** on the WORM vault (`<prefix>-worm-data-events`) alongside the
+platform evidence trail; and the **`AUDIT_BUCKET`** alias the pinned evidence writer needs (without it
+the WORM mirror silently no-ops). Approvals go through **`approve-signoff`** (Cognito access-token,
+SoD, single-use); `finalize` verifies the approval path and refuses a token released around it
+(fail-closed to `ManualReview`, recorded `DENIED`). Account-level **Bedrock model-invocation logging**
+(a platform runbook step) captures de-identified prompts/responses. One run → four independent
+captures of each action.
 
 ## 2. Run a case (execution-input contract)
 
