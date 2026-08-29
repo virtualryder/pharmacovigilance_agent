@@ -20,7 +20,8 @@ bounded steps only (the drafter Lambda invokes Bedrock; extraction/seriousness a
 sign-off gate keeps separation-of-duties: signoff_register stores the task token for a DIFFERENT verified
 approver; finalize runs only after approval."""
 import aws_cdk as cdk
-from aws_cdk import aws_stepfunctions as sfn, aws_stepfunctions_tasks as tasks
+from aws_cdk import (aws_kms as kms, aws_logs as logs, aws_stepfunctions as sfn,
+                     aws_stepfunctions_tasks as tasks)
 from constructs import Construct
 
 
@@ -109,18 +110,40 @@ class WorkflowStack(cdk.Stack):
             sfn.Condition.boolean_equals("$.guards.rules_executed.ok", True), dup).otherwise(manual_review)
         c5 = sfn.Choice(self, "NotDuplicate").when(
             sfn.Condition.boolean_equals("$.guards.duplicate.ok", True), draft).otherwise(duplicate_hold)
+        # G1 parity: a guardrail-BLOCKED or errored narrative must not reach the sign-off gate.
+        c6 = sfn.Choice(self, "DraftOk").when(
+            sfn.Condition.or_(sfn.Condition.is_present("$.draft.out.narrative_ref"),
+                              sfn.Condition.is_present("$.draft.out.narrative")),
+            audit_intent).otherwise(manual_review)
+        # G2 parity: a finalize that refuses (approval path unverified / SoD) routes to ManualReview.
+        c7 = sfn.Choice(self, "FinalizeOk").when(
+            sfn.Condition.boolean_equals("$.commit.out.committed", True),
+            committed).otherwise(manual_review)
 
         definition = extract.next(g_extracted).next(c1)
         lookup.next(g_bg).next(c2)
         mask.next(g_deid).next(c3)
         assess.next(g_rules).next(c4)
         dup.next(g_dup).next(c5)
-        draft.next(audit_intent).next(signoff).next(finalize).next(committed)
+        draft.next(c6)
+        audit_intent.next(signoff).next(finalize).next(c7)
 
+        # Observability parity (obs review 2026-08-29): retained (1y) execution logging + X-Ray.
+        # include_execution_data=False keeps case payloads out of the log stream (R3-2). CMK when present.
+        wf_cmk = None
+        if getattr(data, "cmk", None) is not None:
+            wf_cmk = kms.Key.from_key_arn(self, "WfCmk", data.cmk.key_arn)
+        wf_logs = logs.LogGroup(
+            self, "ControllerLogs", log_group_name=f"/aws/states/{prefix}-icsr-workflow",
+            encryption_key=wf_cmk, retention=logs.RetentionDays.ONE_YEAR,
+            removal_policy=cdk.RemovalPolicy.DESTROY)
         self.controller = sfn.StateMachine(
             self, "Controller", state_machine_name=f"{prefix}-icsr-workflow",
             definition_body=sfn.DefinitionBody.from_chainable(definition),
             state_machine_type=sfn.StateMachineType.STANDARD,
             timeout=cdk.Duration.hours(25),
+            tracing_enabled=True,
+            logs=sfn.LogOptions(destination=wf_logs, level=sfn.LogLevel.ALL,
+                                include_execution_data=False),
         )
         cdk.CfnOutput(self, "ControllerArn", value=self.controller.state_machine_arn)

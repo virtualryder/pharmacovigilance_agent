@@ -76,11 +76,6 @@ data = DataStack(app, f"{prefix}-data", prefix=prefix, retention_profile=profile
 network = None
 if (app.node.try_get_context("network_mode") or "public") == "private":
     network = NetworkStack(app, f"{prefix}-network", prefix=prefix)
-compute = ComputeStack(app, f"{prefix}-compute", prefix=prefix, asset_dir=asset_dir, data=data,
-                       provenance_secret=app.node.try_get_context("provenance_secret") or "",
-                       network=network,
-                       tenant=app.node.try_get_context("tenant") or "")
-workflow = WorkflowStack(app, f"{prefix}-workflow", prefix=prefix, compute=compute, data=data)
 identity = IdentityStack(
     app, f"{prefix}-identity", prefix=prefix,
     identity_mode=app.node.try_get_context("identity_mode") or "sandbox",
@@ -89,6 +84,18 @@ identity = IdentityStack(
         "client_id": app.node.try_get_context("oidc_client_id") or "",
         "client_secret_arn": app.node.try_get_context("oidc_client_secret_arn") or "",
     })
+compute = ComputeStack(app, f"{prefix}-compute", prefix=prefix, asset_dir=asset_dir, data=data,
+                       provenance_secret=app.node.try_get_context("provenance_secret") or "",
+                       network=network,
+                       tenant=app.node.try_get_context("tenant") or "",
+                       # G1 guardrail-pinned drafting + G2 approval-path verification (parity with
+                       # benefits): -c guardrail_id=... -c guardrail_version=1 arms guardrail
+                       # assessment on every narrative; identity feeds approve-signoff.
+                       guardrail_id=app.node.try_get_context("guardrail_id") or "",
+                       guardrail_version=str(app.node.try_get_context("guardrail_version") or "1"),
+                       identity=identity,
+                       approvals_client_id=app.node.try_get_context("approvals_client_id") or "")
+workflow = WorkflowStack(app, f"{prefix}-workflow", prefix=prefix, compute=compute, data=data)
 observability = ObservabilityStack(app, f"{prefix}-observability", prefix=prefix,
                                    compute=compute, workflow=workflow, data=data)
 gateway = GatewayStack(app, f"{prefix}-gateway", prefix=prefix, compute=compute, identity=identity)

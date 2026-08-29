@@ -4,7 +4,8 @@ Dashboards + alarms an operations team can actually run the pilot with. Sources 
 (no app instrumentation required) plus metric filters staged for the custom security signals. SNS is
 the pager seam (subscribe email/PagerDuty at deploy)."""
 import aws_cdk as cdk
-from aws_cdk import aws_cloudwatch as cw, aws_cloudwatch_actions as cwa, aws_kms as kms, aws_sns as sns
+from aws_cdk import (aws_cloudtrail as cloudtrail, aws_cloudwatch as cw,
+                     aws_cloudwatch_actions as cwa, aws_kms as kms, aws_sns as sns)
 from constructs import Construct
 
 
@@ -81,6 +82,22 @@ class ObservabilityStack(cdk.Stack):
             cw.GraphWidget(title="HUD lookup: invocations vs errors (source availability)", width=12,
                            left=[compute.lookup.metric_invocations(), compute.lookup.metric_errors()]),
         )
+
+        # ---- Evidence-store data events (observability parity 2026-08-29) ------------------------
+        # A data-only trail on the agent's WORM vault: the audit ledger proves what the gateway
+        # wrote; these object-level events independently prove nobody ELSE touched the evidence.
+        # Management events are NONE (the platform evidence trail owns those + DynamoDB data events
+        # for all tables), so this trail bills only per data event — cents at pilot volume.
+        if data is not None and getattr(data, "worm_bucket", None) is not None:
+            evidence_trail = cloudtrail.Trail(
+                self, "WormDataEvents", trail_name=f"{prefix}-worm-data-events",
+                management_events=cloudtrail.ReadWriteType.NONE,
+                include_global_service_events=False, is_multi_region_trail=False)
+            evidence_trail.add_event_selector(
+                cloudtrail.DataResourceType.S3_OBJECT,
+                [f"{data.worm_bucket.bucket_arn}/"],
+                read_write_type=cloudtrail.ReadWriteType.ALL)
+            cdk.CfnOutput(self, "EvidenceTrailArn", value=evidence_trail.trail_arn)
 
         cdk.CfnOutput(self, "AlarmTopicArn", value=topic.topic_arn,
                       description="Subscribe ops email / PagerDuty here.")
