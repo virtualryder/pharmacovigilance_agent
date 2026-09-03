@@ -175,7 +175,7 @@ function circle(s, x, y, d, fill, txt, txtColor = WHITE, fs = 16) {
   const s = p.addSlide(); bg(s, CLOUD);
   eyebrow(s, "Where it stands today");
   title(s, "Proven end-to-end on AWS — not a slideware demo");
-  const stats = [["144", "offline tests incl. 23 CDK security assertions", MINT], ["15-day", "expedited clock computed deterministically", TEAL], ["100%", "of submissions gated by a qualified person", AMBER]];
+  const stats = [["191", "offline tests incl. 28 CDK security assertions", MINT], ["15-day", "expedited clock computed deterministically", TEAL], ["100%", "of submissions gated by a qualified person", AMBER]];
   const sw = 3.9, gap = 0.2, x0 = 0.62, y = 1.55;
   stats.forEach((st, i) => {
     const x = x0 + i * (sw + gap);
@@ -261,7 +261,7 @@ function circle(s, x, y, d, fill, txt, txtColor = WHITE, fs = 16) {
   s.addText("A scoped pilot on synthetic data — in your account", { x: 0.6, y: 0.45, w: 12, h: 0.85, fontFace: TF, fontSize: 26, bold: true, color: WHITE, margin: 0 });
   s.addText("Low-risk, boundary-explicit, and reversible. We stand the pattern up on synthetic adverse-event cases in your AWS environment, prove the controls with your quality, compliance, and privacy teams, then scope what a validated (CSV/CSA) deployment would take.",
     { x: 0.62, y: 1.45, w: 11.6, h: 0.9, fontFace: BF, fontSize: 14.5, color: ICE, lineSpacingMultiple: 1.16, margin: 0 });
-  const steps = [["1", "Workshop", "Walk your safety, quality, privacy, and security teams through the architecture and the live clean-account validation and the 144-test offline suite.", "~1 week"], ["2", "Scoped pilot", "Deploy to your account on synthetic adverse-event cases; run cases end-to-end through the governed workflow.", "4–6 weeks"], ["3", "Validation scope", "Define the authoritative reporting rules, licensed coding, connectors, and CSV/CSA a production deployment for your program would require.", "Joint plan"]];
+  const steps = [["1", "Workshop", "Walk your safety, quality, privacy, and security teams through the architecture and the live clean-account validation and the 191-test offline suite.", "~1 week"], ["2", "Scoped pilot", "Deploy to your account on synthetic adverse-event cases; run cases end-to-end through the governed workflow.", "4–6 weeks"], ["3", "Validation scope", "Define the authoritative reporting rules, licensed coding, connectors, and CSV/CSA a production deployment for your program would require.", "Joint plan"]];
   const w = 3.86, gap = 0.24, x0 = 0.62, y = 2.65, h = 2.55;
   steps.forEach((st, i) => {
     const x = x0 + i * (w + gap);

@@ -17,7 +17,8 @@ from constructs import Construct
 
 class IdentityStack(cdk.Stack):
     def __init__(self, scope: Construct, cid: str, *, prefix: str,
-                 identity_mode: str = "sandbox", federation: dict | None = None, **kw):
+                 identity_mode: str = "sandbox", federation: dict | None = None,
+                 tenants: tuple = (), **kw):
         super().__init__(scope, cid, **kw)
         if identity_mode not in ("sandbox", "pilot"):
             raise ValueError(f"unknown identity_mode {identity_mode!r}; choose sandbox or pilot")
@@ -80,6 +81,15 @@ class IdentityStack(cdk.Stack):
         if self.federated_idp is not None:
             self.client.node.add_dependency(self.federated_idp)
 
+        # Hybrid multi-tenant (phase 107/108): tenant membership is a Cognito GROUP (tenant_<id>) because
+        # access tokens carry cognito:groups but not custom attributes; Cedar require_tenant and the
+        # gateway interceptor both read it. A caseworker holds benefits_caseworker + exactly one tenant group.
+        self.tenant_groups = {}
+        for t in tenants:
+            self.tenant_groups[t] = cognito.CfnUserPoolGroup(
+                self, f"TenantGroup-{t}",
+                user_pool_id=self.pool.user_pool_id, group_name=f"tenant_{t}",
+                description=f"Hybrid multi-tenant membership: tenant {t}")
         cognito.CfnUserPoolGroup(self, "ReviewerGroup", user_pool_id=self.pool.user_pool_id,
                                  group_name="pv_reviewer",
                                  description="Qualified pharmacovigilance reviewers (Cedar role group)")

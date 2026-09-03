@@ -40,6 +40,12 @@ CORE_MODULES = [
     "evidence", "verify_chain", "write_audit", "identity",
     "approve_signoff", "request_signoff", "idp_group_mapper", "mcp_client",
     "finalize_signoff",
+    # governed-core 1.6.0: hybrid multi-tenant routing (ledger / WORM / approvals per tenant)
+    "tenancy", "tenant_interceptor",
+    # governed-core 1.7.0 / 1.8.0: correlation + the kill switch (containment)
+    "telemetry", "kill_switch", "kill_switch_control",
+    # governed-core 1.9.0: the per-tenant budget meter
+    "budget",
 ]
 
 # `mcp_client` is a CLI entry point, not a library: it reads sys.argv at module scope, so importing

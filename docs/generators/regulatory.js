@@ -56,7 +56,7 @@ const body = [
     ["Access & authority checks (Part 11)", "Deny-by-default Cedar authorization at the Gateway; authenticated identity via Cognito/IdP; least-privilege permits scoped to the pv_reviewer group.", "Live; sponsor federates its IdP and maps the qualified-person role."],
     ["Separation of duties at sign-off (supports Part 11 §11.10(d))", "The submission is committed only by a different qualified person through a Step Functions waitForTaskToken gate, with a bound, single-use token. Identity is taken from a JWKS-verified token, never from the request body, and denials are written to the ledger.", "Implemented and live-validated. NOT yet implemented: §11.70 signature-to-record binding (the approval hash covers approval metadata, not the approved narrative), §11.50 signature manifestation (printed name / meaning of signature), and §11.200 two-component signing. See docs/PART-11-MAPPING.md — these are open gaps, not sponsor-owned items."],
     ["System & information integrity (GxP)", "Fail-closed PHI masking and a fail-closed Bedrock output guardrail (PHI anonymize + prompt-attack HIGH) on every drafted narrative.", "Live; sponsor tunes guardrail policy."],
-    ["Computer-system validation (CSV/CSA)", "Reproducible, manifest-driven infrastructure-as-code with pinned CDK versions, a 144-test offline suite including 23 CDK security assertions, and a live clean-account validation run with captured evidence. These are engineering artifacts that SUPPORT a validation effort; they are not a validation package.", [{ text: "Sponsor: ", bold: true }, "the CSV/CSA validation package, IQ/OQ/PQ, SOPs, training, change control, and authorization to operate."]],
+    ["Computer-system validation (CSV/CSA)", "Reproducible, manifest-driven infrastructure-as-code with pinned CDK versions, a 191-test offline suite including 28 CDK security assertions, and a live clean-account validation run with captured evidence. These are engineering artifacts that SUPPORT a validation effort; they are not a validation package.", [{ text: "Sponsor: ", bold: true }, "the CSV/CSA validation package, IQ/OQ/PQ, SOPs, training, change control, and authorization to operate."]],
   ], [2500, 4240, 3700]),
 
   H1("7. Separation of duties & the human sign-off gate"),
@@ -66,7 +66,7 @@ const body = [
   bullet([bold("The approver must differ from the requester. "), "A separation-of-duties check rejects self-approval — and for causality, a different senior safety physician must approve."]),
   bullet([bold("Approvals are single-use. "), "The approval token is consumed against a durable ledger; it cannot be replayed."]),
   bullet([bold("Both ends are audited. "), "An INTENT record is written when sign-off is requested and a COMMITTED record when the submission is finalized."]),
-  callout("Demonstrated on a live clean account", [["With Cedar in ENFORCE mode: a reviewer's request to self-approve is blocked as a separation-of-duties violation; a different qualified person's approval succeeds; the submission finalizes only after approval; and re-using the token is rejected. Validated on a clean AWS account (pv-val2, 2026-07-28) and covered by a 144-test offline suite including 23 CDK security assertions. Evidence: evidence/EP1-VALIDATION.md. This is author-produced evidence on synthetic data; no independent audit or penetration test has been performed."]], G.colors.MINT, "E9F5EF"),
+  callout("Demonstrated on a live clean account", [["With Cedar in ENFORCE mode: a reviewer's request to self-approve is blocked as a separation-of-duties violation; a different qualified person's approval succeeds; the submission finalizes only after approval; and re-using the token is rejected. Validated on a clean AWS account (pv-val2, 2026-07-28) and covered by a 191-test offline suite including 28 CDK security assertions. Evidence: evidence/EP1-VALIDATION.md. This is author-produced evidence on synthetic data; no independent audit or penetration test has been performed."]], G.colors.MINT, "E9F5EF"),
 
   H1("8. Shared responsibility"),
   P("The accelerator provides the pattern, the controls, and the evidence. Authorization, validation, and the connection to the sponsor's real systems and rules remain the sponsor's."),
@@ -77,7 +77,7 @@ const body = [
     ["The deterministic seriousness / reporting-clock engine (illustrative defaults)", "The authoritative market-specific reporting rules and their regulatory review"],
     ["The immutable WORM audit design", "Data-retention policy and records management"],
     ["The live openFDA FAERS integration (non-PHI background)", "Licensed MedDRA / WHODrug coding dictionaries and signal interpretation"],
-    ["Reproducible IaC + the 144-test offline suite (23 CDK security assertions)", "Medical review of narratives, causality methodology, and the CSV validation package"],
+    ["Reproducible IaC + the 191-test offline suite (28 CDK security assertions)", "Medical review of narratives, causality methodology, and the CSV validation package"],
     ["Documentation (this guide, the runbook, maintenance)", "Business Associate Agreement and the HIPAA safeguarding program, where PHI is used"],
   ], [5220, 5220]),
 

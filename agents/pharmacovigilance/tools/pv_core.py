@@ -1,7 +1,40 @@
 import json
 import os
+import re
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
+
+import budget  # noqa: E402  (task 128, governed-core 1.9.0: per-tenant token + USD meter)
+import tenancy  # noqa: E402  (phase 107: interceptor-injected, HMAC-signed tenant)
+import telemetry  # noqa: E402  (phase 110: correlation keys -> one aegis.call log line per invocation)
+
+_META_OK = re.compile(r"[^a-zA-Z0-9\s:_@$#=/+,\-.]")
+
+
+def _metered_tenant():
+    """The tenant whose budget this server-side model call is charged to: the interceptor-bound tenant in
+    multi-tenant mode, else the deployment's pinned tenant (tenancy.resolve_tenant)."""
+    try:
+        return tenancy.resolve_tenant()
+    except Exception:
+        return os.environ.get("TENANT_ID") or "default"
+
+
+def _request_metadata(tenant):
+    r"""Converse.requestMetadata: <= 16 items, keys/values <= 256 chars from [a-zA-Z0-9\s:_@$#=/+,-.] (API
+    reference). Correlation keys only - the same set telemetry puts on the aegis.call line - so the drafter's
+    model-invocation log row is per-tenant filterable like the Runtime's (benefits mt6 gate finding)."""
+    meta = {"component": "draft_narrative"}
+    if tenant:
+        meta["tenant"] = tenant
+    try:
+        cur = telemetry.current()
+        for k in ("trace_id", "session_id", "execution_arn", "request_id"):
+            if cur.get(k):
+                meta[k] = cur[k]
+    except Exception:
+        pass
+    return {k: _META_OK.sub("_", str(v))[:256] for k, v in meta.items() if v}
 
 # PV core tools behind the `pv-core` Gateway target:
 #   - draft_narrative      -> REAL Bedrock (Converse) CIOMS/ICSR narrative from a de-identified case
@@ -58,9 +91,24 @@ def _draft(e):
     )
     if GUARDRAIL_ID:
         kwargs["guardrailConfig"] = {"guardrailIdentifier": GUARDRAIL_ID, "guardrailVersion": GUARDRAIL_VERSION}
+    # task 128 (governed-core 1.9.0): the budget meter on the SERVER-SIDE model call. reserve() before the
+    # spend (the workflow hop has no gateway interceptor, so this is where a capped tenant is stopped on
+    # the DraftNarrative state -> ManualReview, fail-closed); commit() the real Converse usage after.
+    tenant = _metered_tenant()
+    meta = _request_metadata(tenant)
+    if meta:
+        kwargs["requestMetadata"] = meta
+    try:
+        reservation = budget.reserve(tenant)
+    except budget.BudgetExceeded as exc:
+        audit = budget.record_denial(exc.decision, {"case_id": e.get("case_id"), "tool": "draft_narrative"}, None, component="draft_narrative")
+        budget.log_line(exc.decision, component="draft_narrative", audit=audit)
+        return {"error": "refused: budget exceeded - the tenant's period cap is reached (hard cap); no narrative was generated",
+                "drafted_by": None, "guardrail_action": budget.GUARDRAIL_ACTION, "budget": budget.refusal(exc.decision)}
     try:
         br = boto3.client("bedrock-runtime")
         resp = br.converse(**kwargs)
+        metered = budget.commit(tenant, resp.get("usage"), DRAFT_MODEL_ID, reserved=reservation.get("reserved", 0))
         narrative = resp["output"]["message"]["content"][0]["text"].strip()
         if resp.get("stopReason") == "guardrail_intervened" and not narrative:
             return {"error": "output guardrail blocked the draft (fail-closed)", "drafted_by": None, "guardrail": "BLOCKED"}
@@ -73,12 +121,17 @@ def _draft(e):
         ref = sanitized.mint_ref(narrative, engine="bedrock:draft_narrative")
         return {"drafted_by": DRAFT_MODEL_ID, "chars": len(narrative),
                 "guardrail_applied": bool(GUARDRAIL_ID), "deidentified_input": True,
-                "narrative_ref": ref, "narrative_stored": bool(ref.get("stored"))}
+                "narrative_ref": ref, "narrative_stored": bool(ref.get("stored")),
+                "budget": {k: metered.get(k) for k in ("metered", "tokens", "usd_micro", "used_tokens", "pct_tokens", "price_version")}}
     except (BotoCoreError, ClientError, KeyError, IndexError) as exc:
         return {"error": "draft failed: " + type(exc).__name__ + ": " + str(exc), "drafted_by": None}
 
 
+@telemetry.instrument('pv_core')
 def handler(event, context):
+    # Phase 107 (hybrid multi-tenant): bind the gateway-interceptor-injected, HMAC-SIGNED tenant for
+    # per-tenant store routing. Unsigned/forged values are refused; multi-tenant mode fails closed.
+    tenancy.bind_tenant_from_args(event)
     e = _coerce(event)
     if "causality_id" in e:
         # commit_causality is a consequential, HUMAN-ONLY discretionary action. The agent can never

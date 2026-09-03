@@ -58,6 +58,12 @@ def finalize(monkeypatch):
         def Table(self, name):
             return fake_table
 
+    # governed-core 1.5.0 added G2 approval-path verification to finalize (it now REFUSES an
+    # unverified approval). Approval verification has its own coverage; THIS test isolates the
+    # exactly-once FINAL# marker, so it uses the handler's documented sandbox escape to bypass
+    # the approval gate (SIGNOFF_ALLOW_UNVERIFIED) and exercise the commit-once logic directly.
+    monkeypatch.setenv("SIGNOFF_ALLOW_UNVERIFIED", "true")
+
     fake_boto3 = type("b3", (), {"resource": staticmethod(lambda *a, **k: FakeResource())})
     fake_exc = type("m", (), {"ClientError": _CondFail})
 
@@ -72,6 +78,9 @@ def finalize(monkeypatch):
                 "chain_hash": "deadbeef", "seq": len(committed), "worm": True}
 
     fake_evidence.record_event = record_event
+    # governed-core 1.6.0: finalize binds the signed tenant pair and routes the ledger through evidence
+    fake_evidence.bind_tenant = lambda event: None
+    fake_evidence.route_table = lambda name, logical: name
     monkeypatch.setitem(sys.modules, "evidence", fake_evidence)
 
     mod = importlib.import_module("finalize_signoff")

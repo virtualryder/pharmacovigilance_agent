@@ -11,6 +11,10 @@ sanitized-artifacts store (P0-1), and the DETERMINISTIC workflow controller stat
 
 The AgentCore control-plane attachment (gateway targets + Cedar policy load) consumes the CfnOutputs
 of these stacks; see cdk/README.md. The legacy shell engine remains an internal reference only.
+
+governed-core 1.9.0 parity (2026-09-03): -c tenants=a,b (hybrid multi-tenant, per-tenant data stacks +
+gateway interceptor), -c global_kill_switch, -c budget_usd / budget_behavior, -c model_logging=1,
+-c runtime_role — the same context switches as the benefits pack.
 """
 import os
 import shutil
@@ -65,6 +69,21 @@ def stage_lambda_bundle():
     return out
 
 
+def budget_from_manifest(app):
+    """B5 (task 128): the manifest's budget: block is THE place a customer sets the token cap; the CDK reads
+    it here and every governed Lambda + the Runtime enforce it. -c budget_usd=<dollars per month> adds the
+    USD cap (0 = tokens only); -c budget_behavior=soft downgrades a deployment to flag-only."""
+    import json
+    import yaml
+    m = yaml.safe_load(open(os.path.join(REPO, "agents", "pharmacovigilance", "manifest.yaml"), encoding="utf-8"))
+    b = dict((m or {}).get("budget") or {})
+    b["monthly_usd"] = float(app.node.try_get_context("budget_usd") or 0)
+    b["cap_behavior"] = app.node.try_get_context("budget_behavior") or b.get("cap_behavior") or "hard"
+    with open(os.path.join(REPO, "lib", "model_prices.json"), encoding="utf-8") as fh:
+        b["prices_json"] = json.dumps(json.load(fh), separators=(",", ":"))
+    return b
+
+
 app = cdk.App()
 env_name = app.node.try_get_context("env") or "dev"
 profile = app.node.try_get_context("retention_profile") or "sandbox-demo"
@@ -73,12 +92,22 @@ asset_dir = stage_lambda_bundle()
 
 data = DataStack(app, f"{prefix}-data", prefix=prefix, retention_profile=profile,
                  kms_mode=app.node.try_get_context("kms") or "aws-managed")
+# Hybrid multi-tenant (phase 107/109): -c tenants=a,b provisions a PHYSICALLY SEPARATE data stack per
+# tenant (tenant-scoped tables + its own WORM vault). The shared control plane routes to them per
+# request (gateway interceptor -> signed tenant -> tenancy.route_store). The base data stack above
+# keeps the silo path + env-name shape; tenant stores are the ones tenants actually use.
+tenants = [t.strip() for t in str(app.node.try_get_context("tenants") or "").split(",") if t.strip()]
+multitenant = bool(tenants) or str(app.node.try_get_context("multitenant") or "").lower() in ("1", "true", "yes")
+tenant_data = {t: DataStack(app, f"{prefix}-{t}-data", prefix=prefix, retention_profile=profile,
+                            kms_mode=app.node.try_get_context("kms") or "aws-managed", tenant=t)
+               for t in tenants}
 network = None
 if (app.node.try_get_context("network_mode") or "public") == "private":
     network = NetworkStack(app, f"{prefix}-network", prefix=prefix)
 identity = IdentityStack(
     app, f"{prefix}-identity", prefix=prefix,
     identity_mode=app.node.try_get_context("identity_mode") or "sandbox",
+    tenants=tuple(tenants),   # phase 107/108: one tenant_<id> group per tenant (hybrid multi-tenant)
     federation={
         "issuer_url": app.node.try_get_context("oidc_issuer_url") or "",
         "client_id": app.node.try_get_context("oidc_client_id") or "",
@@ -88,19 +117,40 @@ compute = ComputeStack(app, f"{prefix}-compute", prefix=prefix, asset_dir=asset_
                        provenance_secret=app.node.try_get_context("provenance_secret") or "",
                        network=network,
                        tenant=app.node.try_get_context("tenant") or "",
-                       # G1 guardrail-pinned drafting + G2 approval-path verification (parity with
-                       # benefits): -c guardrail_id=... -c guardrail_version=1 arms guardrail
-                       # assessment on every narrative; identity feeds approve-signoff.
+                       # phase 107 hybrid: -c multitenant=1 -> tenant derived per request (gateway interceptor)
+                       multitenant=multitenant,
+                       # G1 guardrail-pinned drafting: pass the platform guardrail so DraftNarrative
+                       # generations are guardrail-assessed (-c guardrail_id=... -c guardrail_version=1)
                        guardrail_id=app.node.try_get_context("guardrail_id") or "",
                        guardrail_version=str(app.node.try_get_context("guardrail_version") or "1"),
+                       # G2 approval-path verification: the identity pool/client feed approve-signoff
+                       # (Cognito token verification). approvals_client_id lets a sandbox pass a
+                       # CLI-auth demo client without touching the IaC gateway client.
                        identity=identity,
-                       approvals_client_id=app.node.try_get_context("approvals_client_id") or "")
-workflow = WorkflowStack(app, f"{prefix}-workflow", prefix=prefix, compute=compute, data=data)
+                       approvals_client_id=app.node.try_get_context("approvals_client_id") or "",
+                       # task 127: optional platform-wide switch honoured IN ADDITION to the pack's own
+                       # (-c global_kill_switch=/aegis/kill-switch, the reference stack's parameter)
+                       global_kill_switch=app.node.try_get_context("global_kill_switch") or "",
+                       # task 128: caps from the manifest budget: block (+ -c budget_usd / budget_behavior)
+                       budget=budget_from_manifest(app))
+workflow = WorkflowStack(app, f"{prefix}-workflow", prefix=prefix, compute=compute, data=data,
+                         multitenant=multitenant)
+gateway = GatewayStack(app, f"{prefix}-gateway", prefix=prefix, compute=compute, identity=identity,
+                       multitenant=multitenant)
+# Phase 110 (full transparency): -c model_logging=1 turns on Bedrock MODEL INVOCATION LOGGING for the
+# account+region (it is an account-level singleton - it replaces any existing configuration, so it is
+# opt-in) and delivers the gateway's vended request logs; the runtime's spans/logs are AgentCore-managed.
 observability = ObservabilityStack(app, f"{prefix}-observability", prefix=prefix,
-                                   compute=compute, workflow=workflow, data=data)
-gateway = GatewayStack(app, f"{prefix}-gateway", prefix=prefix, compute=compute, identity=identity)
+                                   compute=compute, workflow=workflow, data=data, gateway=gateway,
+                                   model_logging=bool(app.node.try_get_context("model_logging")),
+                                   # task 128: per-tenant 60/85/100 % budget alarms + the AWS Budgets USD
+                                   # backstop (-c budget_usd) with an IAM deny action + kill-switch engage
+                                   tenants=tuple(tenants) or ("default",),
+                                   budget_usd=float(app.node.try_get_context("budget_usd") or 0),
+                                   runtime_role_name=app.node.try_get_context("runtime_role") or "")
 
-for s in (data, compute, workflow, identity, observability, gateway) + ((network,) if network else ()):
+for s in (data, compute, workflow, identity, observability, gateway) + ((network,) if network else ()) \
+        + tuple(tenant_data.values()):
     cdk.Tags.of(s).add("app", "pv-icsr-agent")
     cdk.Tags.of(s).add("env", env_name)
     cdk.Tags.of(s).add("cost-center", "governed-agents")

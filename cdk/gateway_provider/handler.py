@@ -34,13 +34,66 @@ def _wait(fn, want, tries=40, delay=6):
 
 
 def _find_engine(cc, name):
+    """An existing engine with our name that is (or is becoming) usable. An engine still DELETING
+    (the Update path deletes then re-creates) is NOT reusable - found live 2026-09-02: reusing one
+    raced its deletion and the re-create failed with GetPolicyEngine ResourceNotFound, leaving the
+    stack without a gateway."""
     try:
         for e in cc.list_policy_engines().get("policyEngines", []):
-            if e.get("name") == name:
+            if e.get("name") == name and e.get("status") in (None, "ACTIVE", "CREATING"):
                 return e["policyEngineId"]
     except Exception:
         pass
     return None
+
+
+def _find_gateway(cc, name):
+    try:
+        for g in cc.list_gateways().get("items", []):
+            if g.get("name") == name:
+                return g["gatewayId"]
+    except Exception:
+        pass
+    return None
+
+
+def _remove_gateway(cc, gw_id):
+    """Delete a gateway (targets first) and WAIT until it is gone - gateway names are unique per
+    account, so a create right after a delete conflicts until the deletion has propagated."""
+    for t in cc.list_gateway_targets(gatewayIdentifier=gw_id).get("items", []):
+        try:
+            cc.delete_gateway_target(gatewayIdentifier=gw_id, targetId=t["targetId"])
+        except Exception:
+            pass
+    for _ in range(30):
+        try:
+            if not cc.list_gateway_targets(gatewayIdentifier=gw_id).get("items", []):
+                break
+        except Exception:
+            break
+        time.sleep(3)
+    try:
+        cc.delete_gateway(gatewayIdentifier=gw_id)
+    except Exception:
+        pass
+    for _ in range(60):
+        try:
+            cc.get_gateway(gatewayIdentifier=gw_id)
+        except Exception:
+            return
+        time.sleep(3)
+
+
+def _interceptors(p):
+    """Phase 107: attach the REQUEST interceptor when provided. passRequestHeaders=True is REQUIRED so
+    the interceptor receives the validated JWT (AgentCore does not forward claims to Lambda targets)."""
+    arn = p.get("InterceptorLambdaArn")
+    if not arn:
+        return {}
+    return {"interceptorConfigurations": [{
+        "interceptor": {"lambda": {"arn": arn}},
+        "interceptionPoints": ["REQUEST"],
+        "inputConfiguration": {"passRequestHeaders": True}}]}
 
 
 def _create(cc, ssm, p, region, acct):
@@ -51,14 +104,28 @@ def _create(cc, ssm, p, region, acct):
         engine_id = cc.create_policy_engine(name=p["EngineName"],
                                             description=p.get("EngineDesc", ""))["policyEngineId"]
     engine_arn = f"arn:aws:bedrock-agentcore:{region}:{acct}:policy-engine/{engine_id}"
-    _wait(lambda: cc.get_policy_engine(policyEngineId=engine_id)["status"], "ACTIVE")
+    try:
+        _wait(lambda: cc.get_policy_engine(policyEngineId=engine_id)["status"], "ACTIVE")
+    except cc.exceptions.ResourceNotFoundException:
+        # the reused engine vanished under us (deletion still propagating): create a fresh one
+        engine_id = cc.create_policy_engine(name=p["EngineName"],
+                                            description=p.get("EngineDesc", ""))["policyEngineId"]
+        engine_arn = f"arn:aws:bedrock-agentcore:{region}:{acct}:policy-engine/{engine_id}"
+        _wait(lambda: cc.get_policy_engine(policyEngineId=engine_id)["status"], "ACTIVE")
+
+    # A gateway with our name already present (a half-finished earlier Update, or a delete that has
+    # not propagated - names are unique per account; found live 2026-09-02 as ConflictException):
+    # remove it and wait, then create. The Update path is delete+create by design.
+    stale = _find_gateway(cc, p["GatewayName"])
+    if stale:
+        _remove_gateway(cc, stale)
 
     authz = json.loads(p["AuthorizerConfigJson"])
     gw = cc.create_gateway(name=p["GatewayName"], roleArn=p["GatewayRoleArn"],
                            protocolType="MCP", authorizerType="CUSTOM_JWT",
                            authorizerConfiguration=authz,
                            policyEngineConfiguration={"arn": engine_arn, "mode": "LOG_ONLY"},
-                           description=p.get("GatewayDesc", ""))
+                           description=p.get("GatewayDesc", ""), **_interceptors(p))
     gw_id = gw["gatewayId"]
     _wait(lambda: cc.get_gateway(gatewayIdentifier=gw_id)["status"], "READY")
     g = cc.get_gateway(gatewayIdentifier=gw_id)
@@ -87,7 +154,7 @@ def _create(cc, ssm, p, region, acct):
     cc.update_gateway(gatewayIdentifier=gw_id, name=p["GatewayName"], roleArn=p["GatewayRoleArn"],
                       protocolType="MCP", authorizerType="CUSTOM_JWT",
                       authorizerConfiguration=authz,
-                      policyEngineConfiguration={"arn": engine_arn, "mode": "ENFORCE"})
+                      policyEngineConfiguration={"arn": engine_arn, "mode": "ENFORCE"}, **_interceptors(p))
     _wait(lambda: cc.get_gateway(gatewayIdentifier=gw_id)["status"], "READY")
     return {"GatewayId": gw_id, "GatewayArn": gw_arn, "GatewayUrl": gw_url,
             "PolicyEngineId": engine_id, "Enforcement": "ENFORCE"}

@@ -70,7 +70,15 @@ def _detect(e, text):
     return met
 
 
+import tenancy  # noqa: E402  (phase 107: interceptor-injected, HMAC-signed tenant)
+import telemetry  # noqa: E402  (phase 110: correlation keys -> one aegis.call log line per invocation)
+
+
+@telemetry.instrument('assess_seriousness')
 def handler(event, context):
+    # Phase 107 (hybrid multi-tenant): bind the gateway-interceptor-injected, HMAC-SIGNED tenant for
+    # per-tenant store routing. Unsigned/forged values are refused; multi-tenant mode fails closed.
+    tenancy.bind_tenant_from_args(event)
     e = _coerce(event)
 
     # Fail-closed (P0-1): refuse unless masking is PROVEN by a mask_pii-signed sanitized_ref. Cedar's

@@ -6,3 +6,7 @@ strands-agents-tools==0.8.4
 mcp==1.28.1
 boto3==1.43.51
 aws-opentelemetry-distro==0.18.0
+# task 128: the shared control core (budget meter) - pinned by release tag URL. This file carries no
+# --hash lines (see the P0-8 note above), so the core is version-pinned here and hash-pinned in the
+# Lambda bundle (requirements-core.txt, --require-hashes); the CI-attached wheel is the canonical asset.
+governed-core @ https://github.com/virtualryder/governed-core/releases/download/v1.9.0/governed_core-1.9.0-py3-none-any.whl

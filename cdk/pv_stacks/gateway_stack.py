@@ -41,6 +41,14 @@ def _targets_from_manifest(compute):
         for tool in t["mcp_tools"]:
             props = {k: {"type": v["type"], "description": v.get("description", "")}
                      for k, v in (tool.get("input") or {}).items()}
+            # Phase 107: reserved fields the gateway REQUEST interceptor injects (HMAC-signed tenant). In
+            # the schema ONLY so the gateway maps them through to the Lambda event; the target trusts them
+            # ONLY if the signature verifies (tenancy.verified_tenant_from_args). Caller values are overwritten.
+            props["__aegis_tenant"] = {"type": "string", "description": "Set by the gateway interceptor from the verified identity; caller-supplied values are overwritten and unsigned values are refused."}
+            props["__aegis_tenant_sig"] = {"type": "string", "description": "HMAC over __aegis_tenant, set by the gateway interceptor."}
+            # Phase 110: correlation keys (trace/span/session/mcp-session, JSON) the interceptor derives
+            # from the request headers; observability only - caller values are overwritten.
+            props["__aegis_trace"] = {"type": "string", "description": "Set by the gateway interceptor from the request's trace/session headers (observability correlation); caller-supplied values are overwritten."}
             tools.append({"name": tool["name"], "description": tool["description"],
                           "inputSchema": {"type": "object", "properties": props,
                                           "required": tool.get("required", [])}})
@@ -48,11 +56,15 @@ def _targets_from_manifest(compute):
     return out
 
 
-def _policies():
-    """Every shipped .cedar, gateway ARN normalized to the runtime placeholder."""
+def _policies(multitenant=False):
+    """Every shipped .cedar, gateway ARN normalized to the runtime placeholder. Policies marked
+    `scope: multitenant` in their header (phase 108 require_tenant) attach ONLY in multi-tenant
+    deployments - in silo mode principals carry no tenant tag and they would forbid everything."""
     pols = []
     for p in sorted((REPO / "policies").glob("*.cedar")):
         body = p.read_text(encoding="utf-8")
+        if "scope: multitenant" in body.split("\n", 1)[0] and not multitenant:
+            continue
         body = re.sub(r'AgentCore::Gateway::"arn:aws:bedrock-agentcore:[^"]+"',
                       'AgentCore::Gateway::"__GATEWAY_ARN__"', body)
         mode = "IGNORE_ALL_FINDINGS" if "IGNORE_ALL_FINDINGS" in body else "FAIL_ON_ANY_FINDINGS"
@@ -61,7 +73,8 @@ def _policies():
 
 
 class GatewayStack(cdk.Stack):
-    def __init__(self, scope: Construct, cid: str, *, prefix: str, compute, identity, **kw):
+    def __init__(self, scope: Construct, cid: str, *, prefix: str, compute, identity,
+                 multitenant: bool = False, **kw):
         super().__init__(scope, cid, **kw)
 
         gw_role = iam.Role(self, "GatewayRole",
@@ -72,7 +85,8 @@ class GatewayStack(cdk.Stack):
         targets = _targets_from_manifest(compute)
         gw_role.add_to_policy(iam.PolicyStatement(
             actions=["lambda:InvokeFunction"],
-            resources=[t["lambda_arn"] for t in targets]))   # exact ARNs only (P0-7)
+            resources=[t["lambda_arn"] for t in targets]
+                      + [compute.tenant_interceptor.function_arn]))   # exact ARNs only (P0-7) + the REQUEST interceptor
         # Live-run find (the val2 mystery failure): CreateGateway VALIDATES that the gateway role can
         # read + evaluate its policy engine; without these, creation fails with AccessDenied.
         gw_role.add_to_policy(iam.PolicyStatement(
@@ -118,11 +132,14 @@ class GatewayStack(cdk.Stack):
                     "allowedClients": [identity.client.user_pool_client_id]}}),
                 "SsmParam": ssm_param,
                 "TargetsJson": json.dumps(targets, default=str),
-                "PoliciesJson": json.dumps(_policies()),
+                "PoliciesJson": json.dumps(_policies(multitenant)),
                 "Enforcement": "ENFORCE",
+                # Phase 107: the REQUEST interceptor (passRequestHeaders so it sees the validated JWT)
+                "InterceptorLambdaArn": compute.tenant_interceptor.function_arn,
             })
 
         cdk.CfnOutput(self, "GatewayUrl", value=attachment.get_att_string("GatewayUrl"))
+        self.gateway_arn = attachment.get_att_string("GatewayArn")   # phase 110: vended-log delivery source
         cdk.CfnOutput(self, "GatewayArn", value=attachment.get_att_string("GatewayArn"))
         cdk.CfnOutput(self, "PolicyEngineId", value=attachment.get_att_string("PolicyEngineId"))
         cdk.CfnOutput(self, "Enforcement", value=attachment.get_att_string("Enforcement"))

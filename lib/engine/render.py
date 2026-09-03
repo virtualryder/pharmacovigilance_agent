@@ -123,6 +123,9 @@ def main():
             props = {}
             for pname, pspec in (mt.get("input") or {}).items():
                 props[pname] = {"type": pspec["type"], "description": pspec.get("description", "")}
+            # phase 107 reserved fields (gateway REQUEST interceptor, HMAC-signed tenant) - see gateway_stack
+            props["__aegis_tenant"] = {"type": "string", "description": "Set by the gateway interceptor from the verified identity; caller values overwritten, unsigned refused."}
+            props["__aegis_tenant_sig"] = {"type": "string", "description": "HMAC over __aegis_tenant, set by the gateway interceptor."}
             inline.append({
                 "name": mt["name"],
                 "description": mt.get("description", ""),
@@ -152,6 +155,12 @@ def main():
                     'principal.hasTag("cognito:groups") && '
                     'principal.getTag("cognito:groups") like "*%s*" };' % grp)
             mode = p.get("validation_mode", "FAIL_ON_ANY_FINDINGS")
+        elif kind == "forbid" and p.get("require_tenant"):
+            # phase 108: any tool call by an identity with no tenant tag is forbidden (multi-tenant only)
+            stmt = ('forbid(principal, action, resource is AgentCore::Gateway) '
+                    'unless { principal.hasTag("custom:tenant") || (principal.hasTag("cognito:groups") '
+                    '&& principal.getTag("cognito:groups") like "*tenant_*") };')
+            mode = p.get("validation_mode", "IGNORE_ALL_FINDINGS")
         elif kind == "forbid":
             aid = action_id(p["action"])
             base = ('forbid(principal, action == AgentCore::Action::"%s", '

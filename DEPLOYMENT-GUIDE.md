@@ -171,5 +171,5 @@ pass-by-reference it should report **PASS** (0 hits everywhere).
 
 ```bash
 python -m pytest tests/ -q                    # 111 pass locally (+1 CI-only gate = 112): control-plane + CDK synthesis + pass-by-ref + canary logic
-python -m pytest tests/test_cdk_stacks.py -q  # 23 CDK assertions (synthesizes all 7 stacks)
+python -m pytest tests/test_cdk_stacks.py -q  # 28 CDK assertions (synthesizes all 7 stacks)
 ```

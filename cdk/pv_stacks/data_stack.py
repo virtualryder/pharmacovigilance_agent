@@ -14,8 +14,14 @@ RETENTION_PROFILES = {
 
 class DataStack(cdk.Stack):
     def __init__(self, scope: Construct, cid: str, *, prefix: str,
-                 retention_profile: str = "sandbox-demo", kms_mode: str = "aws-managed", **kw):
+                 retention_profile: str = "sandbox-demo", kms_mode: str = "aws-managed", tenant: str = "", **kw):
         super().__init__(scope, cid, **kw)
+        # Hybrid multi-tenant (phase 107/109): when a tenant is pinned to THIS data stack, every
+        # physical store name is tenant-scoped so each tenant's regulated data lives in its OWN tables
+        # and WORM bucket - physical isolation, not a shared table with a tenant key. Blank -> silo.
+        self.tenant = (tenant or "").strip()
+        def _n(base):
+            return f"{prefix}-{self.tenant}-{base}" if self.tenant else f"{prefix}-{base}"
         if retention_profile not in RETENTION_PROFILES:
             raise ValueError(f"unknown retention_profile {retention_profile!r}; "
                              f"choose one of {sorted(RETENTION_PROFILES)}")
@@ -24,7 +30,7 @@ class DataStack(cdk.Stack):
         self.cmk = None
         enc_ddb = ddb.TableEncryption.AWS_MANAGED
         if kms_mode == "customer-managed":
-            self.cmk = kms.Key(self, "Cmk", alias=f"{prefix}-data",
+            self.cmk = kms.Key(self, "Cmk", alias=_n("data"),
                                enable_key_rotation=True,
                                removal_policy=cdk.RemovalPolicy.RETAIN)
             enc_ddb = ddb.TableEncryption.CUSTOMER_MANAGED
@@ -46,7 +52,7 @@ class DataStack(cdk.Stack):
 
         # Append-only audit ledger (hash-chained by lib/controls/evidence.py; IAM denies mutation).
         self.audit_table = ddb.Table(
-            self, "AuditLedger", table_name=f"{prefix}-audit-ledger",
+            self, "AuditLedger", table_name=_n("audit-ledger"),
             partition_key=ddb.Attribute(name="audit_id", type=ddb.AttributeType.STRING),
             billing_mode=ddb.BillingMode.PAY_PER_REQUEST,
             encryption=enc_ddb, encryption_key=self.cmk,
@@ -56,7 +62,7 @@ class DataStack(cdk.Stack):
 
         # P0-1: sanitized-artifacts store (transient working data; TTL-expired).
         self.sanitized_table = ddb.Table(
-            self, "SanitizedArtifacts", table_name=f"{prefix}-sanitized-artifacts",
+            self, "SanitizedArtifacts", table_name=_n("sanitized-artifacts"),
             partition_key=ddb.Attribute(name="artifact_id", type=ddb.AttributeType.STRING),
             billing_mode=ddb.BillingMode.PAY_PER_REQUEST,
             encryption=enc_ddb, encryption_key=self.cmk,
@@ -68,7 +74,7 @@ class DataStack(cdk.Stack):
         # and ONLY an opaque case_ref travels through Step Functions state — the workflow engine never
         # becomes a sensitive-data repository.
         self.case_table = ddb.Table(
-            self, "CaseStore", table_name=f"{prefix}-case-store",
+            self, "CaseStore", table_name=_n("case-store"),
             partition_key=ddb.Attribute(name="case_ref", type=ddb.AttributeType.STRING),
             billing_mode=ddb.BillingMode.PAY_PER_REQUEST,
             encryption=enc_ddb, encryption_key=self.cmk,
@@ -78,7 +84,7 @@ class DataStack(cdk.Stack):
 
         # Sign-off pending-approvals table (the register/approve path needs it).
         self.pending_table = ddb.Table(
-            self, "PendingApprovals", table_name=f"{prefix}-pending-approvals",
+            self, "PendingApprovals", table_name=_n("pending-approvals"),
             partition_key=ddb.Attribute(name="case_id", type=ddb.AttributeType.STRING),
             billing_mode=ddb.BillingMode.PAY_PER_REQUEST,
             encryption=enc_ddb, encryption_key=self.cmk,
@@ -88,6 +94,9 @@ class DataStack(cdk.Stack):
         # WORM evidence vault (Object Lock; retention per profile).
         self.worm_bucket = s3.Bucket(
             self, "WormVault",
+            # per-tenant vault gets a PREDICTABLE name so the shared control plane can scope IAM to
+            # <prefix>-*-worm-* (hybrid multi-tenant); silo keeps the CDK auto-name.
+            **({"bucket_name": f"{prefix}-{self.tenant}-worm-{self.account}"} if self.tenant else {}),
             object_lock_enabled=True,
             object_lock_default_retention=(
                 s3.ObjectLockRetention.governance(days) if mode == s3.ObjectLockMode.GOVERNANCE
@@ -106,3 +115,4 @@ class DataStack(cdk.Stack):
         cdk.CfnOutput(self, "SanitizedTableName", value=self.sanitized_table.table_name)
         cdk.CfnOutput(self, "WormBucketName", value=self.worm_bucket.bucket_name)
         cdk.CfnOutput(self, "RetentionProfile", value=retention_profile)
+        cdk.CfnOutput(self, "Tenant", value=self.tenant or "(silo)")

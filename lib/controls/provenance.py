@@ -33,14 +33,17 @@ _sm_cache = {}
 
 
 def _sm(arn):
-    """Secrets Manager fetch, cached for the Lambda lifetime; unreadable -> b'' (fail-closed)."""
+    """Secrets Manager fetch, cached for the Lambda lifetime; unreadable -> b'' (fail-closed).
+    Only a SUCCESSFUL read is cached: a failed read (throttle, transient denial, a grant that lands
+    on the next deploy) must not poison a warm container for its whole lifetime - found live on
+    ben-mt2 (2026-09-02), where containers kept refusing after the IAM grant was added."""
     if arn not in _sm_cache:
         try:
             import boto3
             r = boto3.client("secretsmanager").get_secret_value(SecretId=arn)
             _sm_cache[arn] = (r.get("SecretString") or "").encode("utf-8")
         except Exception:
-            _sm_cache[arn] = b""
+            return b""
     return _sm_cache[arn]
 
 

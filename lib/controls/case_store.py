@@ -11,19 +11,21 @@ legitimately need the content (intake extraction, masking) fetch it server-side 
 raw text into state output. Masked content is likewise stored server-side and reached via the signed
 `sanitized_ref` (sanitized.py), so it too never crosses execution state.
 
-Follow-on: B5 tenant-scoped fetch (refuse a ref from another tenant) requires the tenancy module the
-financial-aid agent uses; PV stamps TENANT_ID onto the record but does not yet enforce cross-tenant
-fail-closed on read. Documented in PV-PILOT-READINESS-PLAN."""
+Hybrid multi-tenant (governed-core 1.6.0, ported from benefits 2026-09-03): the table name is routed
+per request to the acting tenant's OWN case store (tenancy.route_store), so a ref can only be read
+from the store of the tenant that wrote it."""
 import os
 import time
 import uuid
+
+import tenancy   # governed-core 1.6.0: per-tenant store routing (hybrid multi-tenant), fail-closed
 
 _TABLE_ENV = "CASE_TABLE"
 _TTL_SECONDS = int(os.environ.get("CASE_TTL_SECONDS", "604800"))  # 7d working data; WORM holds evidence
 
 
 def _table():
-    name = os.environ.get(_TABLE_ENV, "")
+    name = tenancy.route_store(os.environ.get(_TABLE_ENV, ""), "case-store")
     if not name:
         return None
     import boto3

@@ -27,7 +27,15 @@ def _coerce(e):
     return e
 
 
+import tenancy  # noqa: E402  (phase 107: interceptor-injected, HMAC-signed tenant)
+import telemetry  # noqa: E402  (phase 110: correlation keys -> one aegis.call log line per invocation)
+
+
+@telemetry.instrument('intake_icsr')
 def handler(event, context):
+    # Phase 107 (hybrid multi-tenant): bind the gateway-interceptor-injected, HMAC-SIGNED tenant for
+    # per-tenant store routing. Unsigned/forged values are refused; multi-tenant mode fails closed.
+    tenancy.bind_tenant_from_args(event)
     e = _coerce(event)
     # R3-2 pass-by-reference: accept an opaque case_ref and fetch the raw source server-side, so raw
     # content never travels through Step Functions state (extraction yields only non-PHI decision fields).

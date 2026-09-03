@@ -26,18 +26,33 @@ from constructs import Construct
 
 
 class WorkflowStack(cdk.Stack):
-    def __init__(self, scope: Construct, cid: str, *, prefix: str, compute, data, **kw):
+    def __init__(self, scope: Construct, cid: str, *, prefix: str, compute, data,
+                 multitenant: bool = False, **kw):
         super().__init__(scope, cid, **kw)
+
+        # Hybrid multi-tenant (governed-core 1.6.0): the Step Functions hop has NO gateway interceptor,
+        # so the acting tenant travels in the execution input as the HMAC-SIGNED pair
+        # (tenancy.TENANT_FIELD / TENANT_SIG_FIELD, minted by the tenanted caller that started the
+        # execution) and is threaded into EVERY Lambda payload; each Lambda re-verifies the signature
+        # before routing to that tenant's ledger / vault / approvals register. In multi-tenant mode an
+        # execution started WITHOUT the pair fails at the first state (States.Runtime on the missing
+        # path) — fail-closed, never a silent write to the base stores. Silo: nothing is threaded.
+        tenant_fields = ({"__aegis_tenant.$": "$.__aegis_tenant",
+                          "__aegis_tenant_sig.$": "$.__aegis_tenant_sig"} if multitenant else {})
+        # Phase 110 (governed-core 1.7.0): every Lambda payload carries the execution ARN (always
+        # available - no dependency on the execution input) so each tool's aegis.call log line and each
+        # WORM record's correlation block join back to this execution and its X-Ray trace.
+        tenant_fields = {**tenant_fields, "__aegis_execution.$": "$$.Execution.Id"}
 
         def invoke(name, fn, payload, result_path):
             return tasks.LambdaInvoke(self, name, lambda_function=fn,
-                                      payload=sfn.TaskInput.from_object(payload),
+                                      payload=sfn.TaskInput.from_object({**payload, **tenant_fields}),
                                       result_selector={"out.$": "$.Payload"},
                                       result_path=result_path)
 
         def guard(name, guard_name, payload):
             return tasks.LambdaInvoke(self, name, lambda_function=compute.guards,
-                                      payload=sfn.TaskInput.from_object({"guard": guard_name, **payload}),
+                                      payload=sfn.TaskInput.from_object({"guard": guard_name, **payload, **tenant_fields}),
                                       result_selector={"ok.$": "$.Payload.ok", "reason.$": "$.Payload.reason"},
                                       result_path=f"$.guards.{guard_name}")
 
@@ -93,7 +108,7 @@ class WorkflowStack(cdk.Stack):
                  # opaque ref only (artifact_id + digest + signature) — the reviewer fetches the narrative
                  # server-side; the narrative TEXT never enters the pending record or execution state.
                  "narrative_ref.$": "$.draft.out.narrative_ref",
-                 "taskToken": sfn.JsonPath.task_token}),
+                 "taskToken": sfn.JsonPath.task_token, **tenant_fields}),
             timeout=cdk.Duration.hours(24), result_path="$.approval")
         finalize = invoke("Finalize", compute.finalize,
                           {"icsr_id.$": "$.case_id", "requester.$": "$.requester",

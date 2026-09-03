@@ -59,8 +59,10 @@ tools:
     mcp_tools:
       - name: intake_icsr
         description: "Extract the non-PHI decision fields (suspect product, adverse-event terms, ICH E2B seriousness flags, expectedness) from a raw adverse-event source (E2B/CIOMS text or JSON)."
-        input: { source: { type: string, description: "Raw adverse-event report text or JSON." } }
-        required: [source]
+        input:
+          source: { type: string, description: "Raw adverse-event report text or JSON (dev/direct calls only)." }
+          case_ref: { type: string, description: "R3-2 pass-by-reference: the opaque case_ref from ingest; the tool loads the source server-side." }
+        required: []
 
   - target: openfda-lookup
     lambda: pv-openfda-lookup
@@ -80,8 +82,10 @@ tools:
     mcp_tools:
       - name: mask_pii
         description: "Fail-closed PHI de-identification of an adverse-event case (patient name, DOB, address, identifiers, contact info); sets deidentified=true only if masking succeeded."
-        input: { case: { type: string, description: "Adverse-event case text that may contain PHI." } }
-        required: [case]
+        input:
+          case: { type: string, description: "Adverse-event case text that may contain PHI (dev/direct calls only)." }
+          case_ref: { type: string, description: "R3-2 pass-by-reference: the opaque case_ref from ingest; the tool loads the source server-side." }
+        required: []
 
   - target: assess-seriousness
     lambda: pv-assess-seriousness
@@ -95,7 +99,8 @@ tools:
           flags: { type: string, description: "Optional JSON of explicit seriousness booleans (death, life_threatening, hospitalization, disability, congenital_anomaly, medically_important)." }
           expectedness: { type: string, description: "listed | unlisted | unknown (reaction listedness vs the product reference safety information)." }
           deidentified: { type: boolean, description: "True if masked by mask_pii." }
-        required: [deidentified]
+          sanitized_ref: { type: object, description: "The signed sanitized_ref returned by mask_pii (proof of de-identification; pass it verbatim)." }
+        required: [deidentified, sanitized_ref]
 
   - target: detect-duplicate
     lambda: pv-detect-duplicate
@@ -120,7 +125,8 @@ tools:
           assessment: { type: string, description: "The causality/reportability conclusion (e.g. related / not related / reportable)." }
           rationale: { type: string, description: "The documented, case-specific clinical rationale (required)." }
           deidentified: { type: boolean, description: "True if masked by mask_pii." }
-        required: [deidentified]
+          sanitized_ref: { type: object, description: "The signed sanitized_ref returned by mask_pii (proof of de-identification; pass it verbatim)." }
+        required: [deidentified, sanitized_ref]
 
   - target: pv-core
     lambda: pv-core-tools
@@ -131,9 +137,10 @@ tools:
       - name: draft_narrative
         description: "Draft a de-identified CIOMS/ICSR clinical narrative; case must be masked first."
         input:
-          case: { type: string, description: "De-identified case JSON/text." }
+          case: { type: string, description: "De-identified case JSON/text (optional when sanitized_ref is given: the drafter loads the masked text server-side)." }
           deidentified: { type: boolean, description: "True if masked by mask_pii." }
-        required: [case, deidentified]
+          sanitized_ref: { type: object, description: "The signed sanitized_ref returned by mask_pii (proof of de-identification; pass it verbatim)." }
+        required: [deidentified, sanitized_ref]
       - name: finalize_submission
         description: "Commit/submit an ICSR to the regulator; agent must never call this directly."
         input: { icsr_id: { type: string, description: "ICSR/case id." } }
@@ -180,6 +187,9 @@ policies:
   - { name: mask_before_draft,           kind: forbid, action: draft_narrative,      unless_deidentified: true }
   - { name: no_self_submit,              kind: forbid, action: finalize_submission }
   - { name: no_self_causality_commit,    kind: forbid, action: commit_causality }
+  # phase 108 (hybrid multi-tenant): un-tenanted identities are refused at the gateway. Attached ONLY in
+  # multi-tenant deployments (scope: multitenant) - silo principals carry no custom:tenant tag.
+  - { name: require_tenant,              kind: forbid, require_tenant: true, scope: multitenant }
 
 workflow:
   entrypoint: agent.py
@@ -210,6 +220,10 @@ grounding:                       # bar 4 — declared grounding source + thresho
   relevance_threshold: 0.80
 
 budget:                          # bar 5 — hard cap; regulated workload fails closed
+  # ENFORCED LIVE since 2026-09-03 (governed-core 1.9.0): cdk/app.py reads this block into every governed
+  # Lambda + the Runtime (BUDGET_CAP_TOKENS / BUDGET_BEHAVIOR); the per-tenant meter lives in <prefix>-budgets;
+  # alert_thresholds become CloudWatch alarms on Aegis/Budget TokensUsedPct + UsdUsedPct; the USD ceiling is
+  # `-c budget_usd` (AWS Budgets + kill switch). Proof: evidence/AGENTCORE-BUDGET-<date>.md
   monthly_token_cap: 5000000
   inference_profile: pv-agent
   cap_behavior: hard
