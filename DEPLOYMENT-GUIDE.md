@@ -9,7 +9,7 @@ customer deployments.*
 ## 0. Supported path
 
 ```bash
-git checkout v0.1.1-pilot-rc1                 # a validated release tag, never main
+git checkout v0.3.0-pilot-rc1                 # a validated release tag, never main
 cd cdk && pip install -r requirements.txt     # PINNED: aws-cdk-lib==2.262.1, constructs==10.7.1
 npx --yes aws-cdk@2 bootstrap aws://<account>/us-east-1     # once per account
 ```
@@ -43,6 +43,86 @@ lookup needs **no API key** (public). Switches:
 | `tenant=<sponsor-id>` | HMAC-signed into sanitized artifacts (Gate-B B5) |
 | `guardrail_id=<id>` `guardrail_version=<v>` | Arms the platform Bedrock guardrail on the drafter (`draft_narrative`). Every generation is guardrail-assessed; an intervention fails closed (no `narrative_ref`) and the case routes to `ManualReview`. Omit → unguarded (sandbox only). |
 | `approvals_client_id=<cognito-client-id>` | Client id the `approve-signoff` Lambda verifies reviewer access tokens against (identity pool + `pv_reviewer` group wired from the identity stack). |
+
+### 1b. Hybrid multi-tenant + full transparency switches (governed-core ≥ 1.7.1; live-gated on PV 2026-09-03)
+
+| Switch | Effect |
+|---|---|
+| `tenants=<a>,<b>,…` | **Hybrid multi-tenant**: one shared control plane (identity, compute, workflow, gateway + Cedar engine) and ONE physically separate data stack per tenant (`pv-<env>-<tenant>-data`: tenant-scoped case store, sanitized store, ledger, approvals + the tenant's own Object-Lock vault `<prefix>-<tenant>-worm-<account>`). Creates a `tenant_<id>` Cognito group per tenant, deploys the gateway REQUEST interceptor (`tenant-interceptor`), attaches `require_tenant` (Cedar, `policies/require_tenant.cedar`), sets `MULTITENANT=1` + `WORM_BUCKET_TEMPLATE` on the governed Lambdas, threads the signed tenant pair through the workflow, and mirrors least-privilege grants onto `<prefix>-*-<logical>`. Mutually exclusive in spirit with `tenant=` (silo). |
+| `model_logging=1` | **Bedrock model-invocation logging** for the account+region (an account-level singleton — it REPLACES any existing configuration, hence opt-in; record the previous configuration first and restore it at teardown): CloudWatch group `/aws/bedrock/modelinvocations/<prefix>` + S3 large-data bucket + the `bedrock.amazonaws.com` role. Also delivers the AgentCore gateway's vended request logs to `/aws/vendedlogs/bedrock-agentcore/gateway/<prefix>`. |
+| `runtime_role=<toolkit-created role name>` | names the AgentCore Runtime execution role (created by `lib/runtime/_launch.sh`) so the observability stack can grant it the budget meter + metrics and the AWS Budgets action can deny it Bedrock at the USD ceiling. Deploy the observability stack a second time with it after the Runtime launch. |
+
+Multi-tenant contracts: the tenant is **derived, never requested** (verified identity → interceptor →
+HMAC-signed `__aegis_tenant` / `__aegis_tenant_sig` → every Lambda verifies before routing);
+`ingest-case` (direct IAM invocation) derives it from a verified reviewer access token (`access_token` in
+the payload) and returns `tenant_binding`, which the workflow starter MUST splat into the execution input
+(`{case_id, requester, case_ref, drug, case_key, known_keys, **tenant_binding}`) — an execution without
+it fails at `Extract`. Proofs: `scripts/mt_two_tenant_proof.py` (cross-tenant deny, per-tenant routing,
+audit / WORM / approvals routing on both hops) and `scripts/obs_two_tenant_proof.py` +
+`scripts/trace_case.py` (one per-case timeline across Runtime spans, gateway rows, Lambda `aegis.call`
+lines, model-invocation rows and the WORM record; `masked_before_model` per model call). Consolidated
+gate: `scripts/gate_111.py` (both proofs + the strict PII canary, one JSON). Evidence:
+`evidence/AGENTCORE-111-GATE-2026-09-03.md`.
+
+### 1c. Kill Switch — one-command containment (governed-core ≥ 1.8.0; live-gated on PV 2026-09-03)
+
+Every deployment gets ONE SSM Parameter Store flag, `/pv-<env>-pharmacovigilance/kill-switch`, that every
+component on the agent path reads **first** — before tenancy, before Cedar, before masking, before the
+human sign-off gate. Containment precedes evaluation. When engaged: the gateway REQUEST interceptor answers
+`tools/list` + `tools/call` with a 403 JSON-RPC error and the target Lambda is never invoked (a `DENIED
+kill_switch.deny` record + WORM object land in the acting tenant's ledger / vault); every governed tool
+Lambda raises `KillSwitchEngaged` before its handler runs, so a Step Functions execution FAILS at its
+next state; the AgentCore Runtime refuses a new invocation before the tenant is derived and stops a running
+session at its next model call (`stopped: mid-session`, `guardrail_action: KILL_SWITCH`). Fail-closed (an
+unreadable or malformed parameter counts as engaged); 15 s TTL cache per execution environment;
+`-c global_kill_switch=/aegis/kill-switch` makes the pack honour the platform-wide flag too.
+
+**Engage / disengage** are two Lambda function URLs with `AuthType: AWS_IAM` (stack outputs
+`KillSwitchEngageUrl` / `KillSwitchDisengageUrl`), one managed policy each (`pv-<env>-killswitch-engage` /
+`-disengage`) — assign them to **different** roles. The recorded actor is the IAM-verified caller, never a
+body field, and the engaging identity cannot release its own engagement (the refusal is itself a `DENIED`
+record). Nothing else in the app holds `ssm:PutParameter` on the flag.
+
+```bash
+awscurl --service lambda --region us-east-1 -X POST -d '{"reason":"SEV-1: runaway agent"}' "$KILL_SWITCH_ENGAGE_URL"
+awscurl --service lambda --region us-east-1 "$KILL_SWITCH_ENGAGE_URL"                      # status
+awscurl --service lambda --region us-east-1 -X POST -d '{"reason":"safety lead sign-off"}' "$KILL_SWITCH_DISENGAGE_URL"   # a DIFFERENT identity
+```
+
+Live gate: `scripts/kill_switch_proof.py` (29 checks) — `evidence/AGENTCORE-KILL-SWITCH-2026-09-03.md`
+(10 s to effect at the gateway). Runbook: platform `docs/ops/KILL-SWITCH.md`.
+
+### 1d. Per-tenant token budget + USD ceiling (governed-core ≥ 1.9.0; live-gated on PV 2026-09-03)
+
+One DynamoDB meter per deployment (`pv-<env>-budgets`, key `<tenant>#<YYYY-MM>`). Before **every** model
+call the Runtime makes one conditional reservation against the tenant's cap and after it commits the real
+Converse `usage`; the gateway interceptor refuses a tenant at/over its cap on every `tools/call` (403 +
+DENIED WORM record); the drafter's (`draft_narrative`) own Bedrock call is metered the same way — a refusal
+routes the workflow to `ManualReview` and lands a DENIED record joined by the execution ARN, and its
+`Converse` is tagged with `requestMetadata` {tenant, component, trace / execution ids; never a case id}
+so the model log reconciles per tenant. Hard caps fail closed (an unreadable meter denies).
+
+| Switch / knob | Effect |
+|---|---|
+| manifest `budget: monthly_token_cap / cap_behavior` | the deployment default cap (one place to set the number); read by the CDK and the Runtime launch |
+| `-c budget_usd=<dollars>` | per-tenant USD cap (from the pinned price table) **and** an AWS Budgets monthly ceiling on Amazon Bedrock with an `APPLY_IAM_POLICY` action (deny `bedrock:InvokeModel*` on the drafter + `-c runtime_role=` roles) whose notification subscriber (`pv-<env>-budget-breach`) engages the kill switch |
+| `-c budget_behavior=soft` | flag-only for the whole deployment |
+| `PutItem <tenant>#<YYYY-MM> {cap_tokens \| cap_usd_micro \| behavior}` | per-tenant override with no redeploy; `cap_tokens 0` switches a tenant off |
+| `lib/model_prices.json` | the pinned price table; its `price_version` is recorded on every commit — confirm against the Bedrock pricing page per region before production |
+
+Alarms `Aegis/Budget` `TokensUsedPct` / `UsdUsedPct` per tenant at 60 / 85 / 100 %. AWS Budgets is **not**
+real-time (updated up to three times a day) — it is the backstop; the meter is the real-time guard. Live
+gate: `scripts/budget_proof.py` (24 checks) — `evidence/AGENTCORE-BUDGET-2026-09-03.md`. Design + status:
+platform `docs/TOKEN-BUDGETS-AND-COST-CEILINGS.md`.
+
+### After any gate: the regression sweep
+
+`scripts/e2e_regression.py --env <env> --since-minutes <n> --runtime-log-group <group>` sweeps every
+`/aws/lambda/pv-<env>-*` group, the Step Functions log, the gateway's vended log and the Runtime log for
+error-shaped lines, the Lambda `Errors` metric, DLQs, alarms and every execution's terminal state (scoped to
+the same window), and exits non-zero on anything it cannot classify as a deliberate refusal. It is what found
+the one product bug of the 2026-09-03 gate (a tool crashing on the agent path's call shape while every
+proof was green) — run it after every green gate.
 
 ### Observability & governance evidence (parity with the benefits baseline, governed-core ≥ 1.5.0)
 

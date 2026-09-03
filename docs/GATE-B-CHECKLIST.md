@@ -16,7 +16,7 @@ means the control is in the IaC and synth-validated; "live-validated" requires t
 
 - Signed `sanitized_ref` masking proof; token boundary; deterministic guard set with DuplicateHold;
   no-fabrication openFDA; exact-ARN IAM + tamper-Deny; no users/passwords; retention profiles; gateway
-  ENFORCE with the PV tool/policy set — all asserted by the **191-test suite** (incl. 28 CDK assertions).
+  ENFORCE with the PV tool/policy set — all asserted by the **192-test suite** (incl. 28 CDK assertions).
 
 ## EP1 — done (2026-07-27, env `pv-val1`, us-east-1)
 

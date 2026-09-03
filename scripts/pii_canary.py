@@ -64,18 +64,21 @@ def verdict(hits):
 
 
 # ── live sweeps (boto3 only inside these; offline tests never import them) ────
-def sweep_cloudwatch_logs(prefix, marker, since_ms, session=None):
+def sweep_cloudwatch_logs(prefix, marker, since_ms, session=None, extra_groups=(), only_extra=False):
+    """Every /aws/lambda/<prefix>-* group plus any EXTRA groups (phase 110: the AgentCore runtime's
+    group, aws/spans, the gateway's vended request log, the Bedrock model-invocation log) - so the
+    canary also proves the MODEL and the runtime's telemetry never saw the marker."""
     import boto3
     logs = (session or boto3).client("logs")
     total = 0
-    for page in logs.get_paginator("describe_log_groups").paginate(logGroupNamePrefix=f"/aws/lambda/{prefix}-"):
-        for g in page["logGroups"]:
-            try:
-                r = logs.filter_log_events(logGroupName=g["logGroupName"], startTime=since_ms,
-                                           filterPattern=f'"{marker}"')
-                total += len(r.get("events", []))
-            except Exception:
-                pass
+    names = ([] if only_extra else [g["logGroupName"] for page in logs.get_paginator("describe_log_groups").paginate(logGroupNamePrefix=f"/aws/lambda/{prefix}-")
+                                    for g in page["logGroups"]]) + [g for g in extra_groups if g]
+    for name in names:
+        try:
+            r = logs.filter_log_events(logGroupName=name, startTime=since_ms, filterPattern=f'"{marker}"')
+            total += len(r.get("events", []))
+        except Exception:
+            pass
     return total
 
 
@@ -129,6 +132,10 @@ def main():
     ap.add_argument("--sweep-only", action="store_true")
     ap.add_argument("--strict", action="store_true", help="Gate-B exit: every destination must be clean")
     ap.add_argument("--wait", type=int, default=120, help="seconds to wait after --execute before sweeping")
+    # hybrid multi-tenant / phase 110 additions (harness only; product code unchanged):
+    ap.add_argument("--access-token", default="", help="multi-tenant: a tenant reviewer's Cognito access token (ingest derives the tenant; the execution carries the signed pair)")
+    ap.add_argument("--extra-log-group", action="append", default=[], help="additional log groups to sweep AND gate on (e.g. the gateway's vended request log); repeatable.")
+    ap.add_argument("--info-log-group", action="append", default=[], help="log groups to sweep and REPORT but not gate on: the Bedrock model-invocation log. The MODEL path is measured by scripts/trace_case.py (masked_before_model, realistic PII canaries) - a synthetic marker token is not something Comprehend reliably classifies as a NAME (seen live: the same marker masked on one run and not the next), so a hit here is recorded as informational, never as a pass-by-reference leak.")
     args = ap.parse_args()
 
     import datetime
@@ -141,27 +148,39 @@ def main():
         # R3-2 pass-by-reference: raw content enters ONLY through ingest; the execution starts with an
         # opaque case_ref — exactly what the strict sweep verifies.
         lam = boto3.client("lambda")
+        payload = {"source": case["source"], "case_id": case["case_id"]}
+        if args.access_token:
+            payload["access_token"] = args.access_token
         ing = json.loads(lam.invoke(FunctionName=f"{args.prefix}-ingest-case",
-                                    Payload=json.dumps({"source": case["source"], "case_id": case["case_id"]}).encode())["Payload"].read())
+                                    Payload=json.dumps(payload).encode())["Payload"].read())
+        if not ing.get("case_ref"):
+            print(json.dumps({"verdict": "FAIL", "error": "ingest refused: %s" % ing}, indent=2))
+            sys.exit(2)
         sfn = boto3.client("stepfunctions")
         arn = next(m["stateMachineArn"] for m in sfn.list_state_machines()["stateMachines"]
                    if m["name"].startswith(args.prefix))
         sfn.start_execution(stateMachineArn=arn, name=f"pii-canary-{marker[7:19].lower()}",
                             input=json.dumps({"case_id": case["case_id"], "requester": "canary",
                                               "case_ref": ing["case_ref"], "drug": "atorvastatin",
-                                              "case_key": "atorvastatin|rhabdomyolysis|2026|hcp", "known_keys": ""}))
+                                              "case_key": "atorvastatin|rhabdomyolysis|2026|hcp", "known_keys": "",
+                                              **(ing.get("tenant_binding") or {})}))
         print(f"canary execution started (marker {marker}); waiting {args.wait}s for telemetry...", file=sys.stderr)
         time.sleep(args.wait)
 
     until = datetime.datetime.now(datetime.timezone.utc)
     hits = {
-        "cloudwatch_logs": sweep_cloudwatch_logs(args.prefix, marker, int(since.timestamp() * 1000)),
+        "cloudwatch_logs": sweep_cloudwatch_logs(args.prefix, marker, int(since.timestamp() * 1000),
+                                                 extra_groups=args.extra_log_group),
         "stepfunctions_history": sweep_stepfunctions(args.prefix, marker),
         "xray": sweep_xray(marker, since, until),
         "dlq": sweep_dlqs(args.prefix, marker),
     }
+    info = {g: sweep_cloudwatch_logs(args.prefix, marker, int(since.timestamp() * 1000), extra_groups=[g], only_extra=True)
+            for g in args.info_log_group}
     v = strict_verdict(hits) if args.strict else verdict(hits)
     v.update({"marker": marker, "prefix": args.prefix, "swept_at": until.isoformat()})
+    if info:
+        v["informational_model_path"] = {"hits": info, "note": "not gated: synthetic marker vs Comprehend NAME recall; the model-path control is masked_before_model (trace_case, realistic PII)"}
     print(json.dumps(v, indent=2))
     sys.exit(0 if v["verdict"] == "PASS" else 2)
 

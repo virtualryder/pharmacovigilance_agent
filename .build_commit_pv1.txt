@@ -1,0 +1,30 @@
+governed-core 1.9.0 parity with benefits (GAP-1): multi-tenant routing, correlation, kill switch, per-tenant budget - offline green
+
+Port of the benefits pack's 1.5.0 -> 1.9.0 deltas (2026-08-29 .. 2026-09-03) onto the PV pack:
+- requirements-core.txt / lib/runtime/requirements.txt -> governed-core 1.9.0 (CI wheel, sha256 f332a0a2...);
+  lib/core.lock re-locked at 1.9.0; lib/runtime (agent.py, _launch.sh, _obs_setup.sh, _configure.sh) and
+  lib/engine/render.py taken verbatim from benefits (byte-identical shared runtime; the PREFIX derivation now
+  strips any pack suffix); lib/model_prices.json; lib/controls patched (tenancy routing, telemetry.instrument).
+- cdk: compute_stack (kill switch param + engage/disengage AWS_IAM URLs with IAM SoD, budgets table + BUDGET_*
+  env, tenant interceptor, multi-tenant mirror grants incl. the drafter's append-only ledger grant), data/gateway/
+  identity/workflow/observability stacks (per-tenant data stacks, interceptor attachment + reserved schema fields,
+  tenant_<id> groups, signed pair + execution ARN in every Lambda payload, budget alarms + AWS Budgets ceiling +
+  breach -> kill switch, model-invocation logging + gateway vended logs), app.py context switches (tenants,
+  global_kill_switch, budget_usd, budget_behavior, model_logging, runtime_role), gateway_provider (interceptor).
+- tools: every handler instrumented (telemetry.instrument + tenancy.bind_tenant_from_args); ingest_case is the
+  multi-tenant ingestion boundary (verified token -> signed pair); pv_core meters its server-side Converse
+  (budget.reserve / commit, DENIED record on refusal) and tags it with requestMetadata; manifest exposes case_ref /
+  sanitized_ref on the tool schemas (the gap that made every agent-path call refuse on benefits), require_tenant
+  policy (scope: multitenant), budget block annotated; policies/require_tenant.cedar.
+- scripts (ported): kill_switch_proof, budget_proof, e2e_regression, rt_invoke, trace_case, mt_two_tenant_proof,
+  obs_two_tenant_proof, gate_111, cleanup_retained.
+- tests: test_cdk_stacks (+4: per-tenant naming, interceptor wiring, audit routing, kill switch, budget),
+  test_runtime_kill_switch, test_tenancy_multitenant, test_tenant_interceptor, test_observability_correlation,
+  test_trace_case, test_core_dependency (core modules). Pre-existing red on main since 2026-08-29 fixed:
+  test_exactly_once_finalize (finalize binds the tenant; SIGNOFF_ALLOW_UNVERIFIED for the marker test),
+  test_pass_by_reference (case_store routes via tenancy), test_cdk_stacks pipeline order (DraftOk / FinalizeOk
+  from the G1/G2 port). Suite 191 (190 local + 1 CI-only); 28 CDK assertions; doc-count gates updated.
+Live gates on a from-zero multi-tenant deployment follow in the next commit.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01H6R9E992bAAyrPQAdygUwC

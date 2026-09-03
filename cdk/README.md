@@ -17,10 +17,10 @@ Gate-B posture as switches.
 
 ## Deploy
 
-Supported release tag: `v0.1.1-pilot-rc1` (cut after live EP1; deploy tags, never `main`).
+Supported release tag: `v0.3.0-pilot-rc1` (cut 2026-09-03 after the live governed-core 1.9.0 multi-tenant gate on `pv-mt`; earlier validated tags: `v0.1.1-pilot-rc1` after live EP1, `v0.2.0-pilot-rc1` after EP2; deploy tags, never `main`).
 
 ```bash
-git checkout v0.1.1-pilot-rc1           # a validated release tag, never main
+git checkout v0.3.0-pilot-rc1           # a validated release tag, never main
 cd cdk && pip install -r requirements.txt
 cdk bootstrap aws://<acct>/us-east-1    # once per account
 # full Gate-B posture:

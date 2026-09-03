@@ -77,10 +77,11 @@ def main():
     time.sleep(2)
     tok = access_token(ident["UserPoolId"], ident["ClientId"], a.region, "cw-a", pw)
     obs_outputs = outputs(cf, f"{prefix}-observability")
-    extra = [g for g in (obs_outputs.get("GatewayRequestLogGroup"), obs_outputs.get("ModelInvocationLogGroup")) if g]
     cmd = [py, str(HERE / "pii_canary.py"), "--prefix", prefix, "--execute", "--strict", "--wait", "150", "--access-token", tok]
-    for g in extra:
-        cmd += ["--extra-log-group", g]
+    if obs_outputs.get("GatewayRequestLogGroup"):
+        cmd += ["--extra-log-group", obs_outputs["GatewayRequestLogGroup"]]      # gated: the gateway never sees raw content
+    if obs_outputs.get("ModelInvocationLogGroup"):
+        cmd += ["--info-log-group", obs_outputs["ModelInvocationLogGroup"]]      # reported only (see pii_canary --help)
     gate["steps"]["canary"] = run(cmd, out.with_name(out.stem + "-canary.json"))
     gate["steps"]["canary"]["cmd"] = gate["steps"]["canary"]["cmd"].replace(tok, "<access-token>")
 

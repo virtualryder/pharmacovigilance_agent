@@ -249,7 +249,7 @@ def main():
         ex = sfn.start_execution(stateMachineArn=ctrl, name="mtproof-" + case_id.lower(),
                                  input=json.dumps({"case_id": case_id, "requester": "cw-a",
                                                    "case_ref": ing["case_ref"],
-                                                   "drug": "atorvastatin",
+                                                   "drug": "atorvastatin", "case_key": "atorvastatin|rhabdomyolysis|2026|hcp", "known_keys": "",
                                                    **ing.get("tenant_binding", {})}))["executionArn"]
         for _ in range(60):
             time.sleep(5)
@@ -269,7 +269,7 @@ def main():
         ex2 = sfn.start_execution(stateMachineArn=ctrl, name="mtproof-nobind-" + case_id.lower(),
                                   input=json.dumps({"case_id": case_id + "-NB", "requester": "cw-a",
                                                     "case_ref": ing["case_ref"],
-                                                    "drug": "atorvastatin"}))["executionArn"]
+                                                    "drug": "atorvastatin", "case_key": "atorvastatin|rhabdomyolysis|2026|hcp", "known_keys": ""}))["executionArn"]
         for _ in range(24):
             time.sleep(5)
             d2 = sfn.describe_execution(executionArn=ex2)

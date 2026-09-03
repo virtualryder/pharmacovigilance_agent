@@ -270,7 +270,7 @@ def main():
     if wf.get("ControllerArn") and ing.get("case_ref"):
         ex = sfn.start_execution(stateMachineArn=wf["ControllerArn"], name="ksproof-" + case_id.lower(),
                                  input=json.dumps({"case_id": case_id, "requester": "ks-cw-a", "case_ref": ing["case_ref"],
-                                                   "drug": "atorvastatin", **binding}))["executionArn"]
+                                                   "drug": "atorvastatin", "case_key": "atorvastatin|rhabdomyolysis|2026|hcp", "known_keys": "", **binding}))["executionArn"]
         for _ in range(24):
             time.sleep(5)
             d = sfn.describe_execution(executionArn=ex)

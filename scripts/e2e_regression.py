@@ -121,6 +121,12 @@ def main():
             d = sfn.describe_execution(executionArn=ex["executionArn"])
             st = d["status"]; cause = (d.get("cause") or "") + " " + (d.get("error") or "")
             kind, why = ("ok", "") if st in ("SUCCEEDED",) else classify(cause) if st in ("FAILED", "ABORTED") else ("running", "still at the sign-off pause (24h wait) - stop before teardown")
+            # Same window as the log sweep: an execution that STARTED before --since-minutes is history
+            # (a run from before a fix was deployed), reported but never counted - the sweep judges the
+            # code that is deployed now, like the log-group rows do.
+            if ex["startDate"].timestamp() * 1000 < since_ms and st != "RUNNING":
+                rep["executions"].append({"name": ex["name"], "status": st, "kind": "outside_window", "why": f"started before the {a.since_minutes}-minute window; not counted", "cause": cause[:200]})
+                continue
             if st == "ABORTED" and kind == "unexpected":
                 kind, why = "expected", "stopped by the harness at the sign-off pause"
             if st == "RUNNING":

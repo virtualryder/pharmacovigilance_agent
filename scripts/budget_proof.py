@@ -177,7 +177,7 @@ def main():
     if ing.get("case_ref"):
         ex = sfn.start_execution(stateMachineArn=wf["ControllerArn"], name="bgproof-" + case_b.lower(),
                                  input=json.dumps({"case_id": case_b, "requester": "bg-cw-b", "case_ref": ing["case_ref"],
-                                                   "drug": "atorvastatin", **ing.get("tenant_binding", {})}))["executionArn"]
+                                                   "drug": "atorvastatin", "case_key": "atorvastatin|rhabdomyolysis|2026|hcp", "known_keys": "", **ing.get("tenant_binding", {})}))["executionArn"]
         for _ in range(36):
             time.sleep(5)
             d = sfn.describe_execution(executionArn=ex)
@@ -196,7 +196,7 @@ def main():
                     draft_out = {"raw": det["output"][:300]}
         if ex_status == "RUNNING":
             sfn.stop_execution(executionArn=ex, error="HarnessStopped", cause="budget proof complete")
-    C["workflow_draft_refused_fail_closed"] = ("DraftNotice" in ex_states and "ManualReview" in ex_states
+    C["workflow_draft_refused_fail_closed"] = ("DraftNarrative" in ex_states and "ManualReview" in ex_states
                                               and (draft_out.get("guardrail_action") == "BUDGET" or "budget_exceeded" in json.dumps(draft_out)))
     den_b = chain_rows(ddb, ledger[tb], "BUDGET") + chain_rows(ddb, ledger[tb], case_b)
     C["denials_recorded_in_tenant_ledger"] = any(r.get("action") == "budget.deny" and r.get("phase") == "DENIED" and r.get("tenant_id") == tb for r in den_b)

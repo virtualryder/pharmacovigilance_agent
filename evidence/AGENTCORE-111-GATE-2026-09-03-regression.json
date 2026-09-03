@@ -1,0 +1,373 @@
+{
+ "prefix": "pv-mt",
+ "since_minutes": 23,
+ "log_groups": {
+  "/aws/lambda/pv-mt-approve-signoff": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-assess-seriousness": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-budget-breach": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-core-tools": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-detect-duplicate": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-finalize": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-gateway-AttachmentProviderEF56056D-0v03AMRX3uxY": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-ingest-case": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-intake-icsr": {
+   "events": 2,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": [
+    {
+     "ts": 1788475987761,
+     "stream": "2026/09/03/pv-mt-intake-icsr[$LATEST]30e9a6159f7b470aa785134",
+     "kind": "expected",
+     "why": "task 127: kill-switch containment provoked by scripts/kill_switch_proof.py (engaged => refused everywhere; released by a second identity)",
+     "excerpt": "[ERROR] KillSwitchEngaged: kill switch ENGAGED (/pv-mt-pharmacovigilance/kill-switch): SEV-1 drill: runaway agent suspected Traceback (most recent call last): \u00a0\u00a0File \"/var/task/telemetry.py\", line 234, in wrapped \u00a0\u00a0\u00a0\u00a0raise kill_switch.KillSwitchEngaged(engaged"
+    },
+    {
+     "ts": 1788475988621,
+     "stream": "2026/09/03/pv-mt-intake-icsr[$LATEST]30e9a6159f7b470aa785134",
+     "kind": "expected",
+     "why": "task 127: kill-switch containment provoked by scripts/kill_switch_proof.py (engaged => refused everywhere; released by a second identity)",
+     "excerpt": "[ERROR] KillSwitchEngaged: kill switch ENGAGED (/pv-mt-pharmacovigilance/kill-switch): SEV-1 drill: runaway agent suspected Traceback (most recent call last): \u00a0\u00a0File \"/var/task/telemetry.py\", line 234, in wrapped \u00a0\u00a0\u00a0\u00a0raise kill_switch.KillSwitchEngaged(engaged"
+    }
+   ]
+  },
+  "/aws/lambda/pv-mt-kill-switch-disengage": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-kill-switch-engage": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-mask-pii": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-observability-AWS679f53fac002430cb0da5b7982b-l3wfmaZgUZKu": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-observability-CustomS3AutoDeleteObjectsCusto-qT7g9wBn8z7R": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-openfda-lookup": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-record-causality": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-request-signoff": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-signoff-register": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-tenant-interceptor": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-workflow-guards": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/lambda/pv-mt-write-audit": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/states/pv-mt-icsr-workflow": {
+   "events": 2,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": [
+    {
+     "ts": 1788475988628,
+     "stream": "states/pv-mt-icsr-workflow/2026-09-03-22/00000000",
+     "kind": "expected",
+     "why": "task 127: kill-switch containment provoked by scripts/kill_switch_proof.py (engaged => refused everywhere; released by a second identity)",
+     "excerpt": "{\"details\":{\"cause\":\"{\\\"errorMessage\\\":\\\"kill switch ENGAGED (/pv-mt-pharmacovigilance/kill-switch): SEV-1 drill: runaway agent suspected\\\",\\\"errorType\\\":\\\"KillSwitchEngaged\\\",\\\"requestId\\\":\\\"1e948577-d1b6-4e5a-b837-9c705b2606a8\\\",\\\"stackTrace\\\":[\\\"  File \\\\\\\""
+    },
+    {
+     "ts": 1788475988665,
+     "stream": "states/pv-mt-icsr-workflow/2026-09-03-22/00000000",
+     "kind": "expected",
+     "why": "task 127: kill-switch containment provoked by scripts/kill_switch_proof.py (engaged => refused everywhere; released by a second identity)",
+     "excerpt": "{\"details\":{\"cause\":\"{\\\"errorMessage\\\":\\\"kill switch ENGAGED (/pv-mt-pharmacovigilance/kill-switch): SEV-1 drill: runaway agent suspected\\\",\\\"errorType\\\":\\\"KillSwitchEngaged\\\",\\\"requestId\\\":\\\"1e948577-d1b6-4e5a-b837-9c705b2606a8\\\",\\\"stackTrace\\\":[\\\"  File \\\\\\\""
+    }
+   ]
+  },
+  "/aws/vendedlogs/bedrock-agentcore/gateway/pv-mt": {
+   "events": 0,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": []
+  },
+  "/aws/bedrock-agentcore/runtimes/pv_runtime_agent-xZccfX957W-DEFAULT": {
+   "events": 4,
+   "unexpected": 0,
+   "warnings": 0,
+   "rows": [
+    {
+     "ts": 1788475971867,
+     "stream": "otel-rt-logs",
+     "kind": "expected",
+     "why": "task 127: kill-switch containment provoked by scripts/kill_switch_proof.py (engaged => refused everywhere; released by a second identity)",
+     "excerpt": "{\"resource\":{\"attributes\":{\"telemetry.sdk.language\":\"python\",\"telemetry.sdk.name\":\"opentelemetry\",\"telemetry.sdk.version\":\"1.42.1\",\"service.name\":\"pv_runtime_agent.DEFAULT\",\"aws.log.group.names\":\"/aws/bedrock-agentcore/runtimes/pv_runtime_agent-xZccfX957W-DEFA"
+    },
+    {
+     "ts": 1788475971867,
+     "stream": "2026/09/03/[runtime-logs]2d7de703-2cef-48dc-8dc9-31a3b0bcba3",
+     "kind": "expected",
+     "why": "task 127: kill-switch containment provoked by scripts/kill_switch_proof.py (engaged => refused everywhere; released by a second identity)",
+     "excerpt": "2026-09-03 22:52:51,867 ERROR [strands.event_loop.event_loop] [event_loop.py:394] [trace_id=6a99fa337e5bbf256f0e401756da04f9 span_id=79c6c709ece6fff6 resource.service.name=pv_runtime_agent.DEFAULT trace_sampled=True] - exception=<KillSwitchEngaged> | event loo"
+    },
+    {
+     "ts": 1788476220240,
+     "stream": "otel-rt-logs",
+     "kind": "expected",
+     "why": "task 128: budget refusals provoked by scripts/budget_proof.py (capped tenant; synthetic USD-ceiling breach)",
+     "excerpt": "{\"resource\":{\"attributes\":{\"telemetry.sdk.language\":\"python\",\"telemetry.sdk.name\":\"opentelemetry\",\"telemetry.sdk.version\":\"1.42.1\",\"service.name\":\"pv_runtime_agent.DEFAULT\",\"aws.log.group.names\":\"/aws/bedrock-agentcore/runtimes/pv_runtime_agent-xZccfX957W-DEFA"
+    },
+    {
+     "ts": 1788476220240,
+     "stream": "2026/09/03/[runtime-logs]966aae12-18c3-4184-bbd3-89af85a3d32",
+     "kind": "expected",
+     "why": "task 128: budget refusals provoked by scripts/budget_proof.py (capped tenant; synthetic USD-ceiling breach)",
+     "excerpt": "2026-09-03 22:57:00,240 ERROR [strands.event_loop.event_loop] [event_loop.py:394] [trace_id=6a99fb371707d034331be8a36210d355 span_id=d2bd1b6c2593c96a resource.service.name=pv_runtime_agent.DEFAULT trace_sampled=True] - exception=<BudgetExceeded> | event loop c"
+    }
+   ]
+  }
+ },
+ "executions": [
+  {
+   "name": "bgproof-bg-wf-81f0ec",
+   "status": "SUCCEEDED",
+   "kind": "ok",
+   "why": "",
+   "cause": " "
+  },
+  {
+   "name": "ksproof-ks-f47e08",
+   "status": "FAILED",
+   "kind": "expected",
+   "why": "task 127: kill-switch containment provoked by scripts/kill_switch_proof.py (engaged => refused everywhere; released by a second identity)",
+   "cause": "{\"errorMessage\":\"kill switch ENGAGED (/pv-mt-pharmacovigilance/kill-switch): SEV-1 drill: runaway agent suspected\",\"errorType\":\"KillSwitchEngaged\",\"requestId\":\"1e948577-d1b6-4e5a-b837-9c705b2606a8\",\"s"
+  },
+  {
+   "name": "pii-canary-53211da1e54f",
+   "status": "RUNNING",
+   "kind": "running",
+   "why": "still at the sign-off pause (24h wait) - stop before teardown",
+   "cause": " "
+  },
+  {
+   "name": "mtproof-nobind-mt-wf-92cb8f",
+   "status": "FAILED",
+   "kind": "expected",
+   "why": "fail-closed: execution started WITHOUT the signed pair fails at Extract",
+   "cause": "An error occurred while executing the state 'Extract' (entered at the event id #2). The JSONPath '$.__aegis_tenant' specified for the field '__aegis_tenant.$' could not be found in the input '{\"case_i"
+  },
+  {
+   "name": "mtproof-mt-wf-92cb8f",
+   "status": "ABORTED",
+   "kind": "expected",
+   "why": "harness stopped the execution at the sign-off pause",
+   "cause": "mt proof complete (sign-off pause reached) "
+  },
+  {
+   "name": "bgproof-bg-wf-20b762",
+   "status": "SUCCEEDED",
+   "kind": "outside_window",
+   "why": "started before the 23-minute window; not counted",
+   "cause": " "
+  },
+  {
+   "name": "bgproof-bg-wf-0f424f",
+   "status": "SUCCEEDED",
+   "kind": "outside_window",
+   "why": "started before the 23-minute window; not counted",
+   "cause": " "
+  },
+  {
+   "name": "ksproof-ks-a38a82",
+   "status": "FAILED",
+   "kind": "outside_window",
+   "why": "started before the 23-minute window; not counted",
+   "cause": "{\"errorMessage\":\"kill switch ENGAGED (/pv-mt-pharmacovigilance/kill-switch): SEV-1 drill: runaway agent suspected\",\"errorType\":\"KillSwitchEngaged\",\"requestId\":\"2d719922-25af-4e3b-a2a9-d49a2d9335bb\",\"s"
+  },
+  {
+   "name": "pii-canary-5c95803faa40",
+   "status": "RUNNING",
+   "kind": "running",
+   "why": "still at the sign-off pause (24h wait) - stop before teardown",
+   "cause": " "
+  },
+  {
+   "name": "mtproof-nobind-mt-wf-1fde90",
+   "status": "FAILED",
+   "kind": "outside_window",
+   "why": "started before the 23-minute window; not counted",
+   "cause": "An error occurred while executing the state 'Extract' (entered at the event id #2). The JSONPath '$.__aegis_tenant' specified for the field '__aegis_tenant.$' could not be found in the input '{\"case_i"
+  },
+  {
+   "name": "mtproof-mt-wf-1fde90",
+   "status": "ABORTED",
+   "kind": "outside_window",
+   "why": "started before the 23-minute window; not counted",
+   "cause": "mt proof complete (sign-off pause reached) "
+  },
+  {
+   "name": "pii-canary-b9e401000566",
+   "status": "RUNNING",
+   "kind": "running",
+   "why": "still at the sign-off pause (24h wait) - stop before teardown",
+   "cause": " "
+  },
+  {
+   "name": "mtproof-nobind-mt-wf-6d3c24",
+   "status": "FAILED",
+   "kind": "outside_window",
+   "why": "started before the 23-minute window; not counted",
+   "cause": "An error occurred while executing the state 'Extract' (entered at the event id #2). The JSONPath '$.__aegis_tenant' specified for the field '__aegis_tenant.$' could not be found in the input '{\"case_i"
+  },
+  {
+   "name": "mtproof-mt-wf-6d3c24",
+   "status": "ABORTED",
+   "kind": "outside_window",
+   "why": "started before the 23-minute window; not counted",
+   "cause": "mt proof complete (sign-off pause reached) "
+  },
+  {
+   "name": "pii-canary-8e0938b75080",
+   "status": "RUNNING",
+   "kind": "running",
+   "why": "still at the sign-off pause (24h wait) - stop before teardown",
+   "cause": " "
+  },
+  {
+   "name": "mtproof-nobind-mt-wf-006813",
+   "status": "FAILED",
+   "kind": "outside_window",
+   "why": "started before the 23-minute window; not counted",
+   "cause": "An error occurred while executing the state 'Extract' (entered at the event id #2). The JSONPath '$.__aegis_tenant' specified for the field '__aegis_tenant.$' could not be found in the input '{\"case_i"
+  },
+  {
+   "name": "mtproof-mt-wf-006813",
+   "status": "FAILED",
+   "kind": "outside_window",
+   "why": "started before the 23-minute window; not counted",
+   "cause": "An error occurred while executing the state 'DetectDuplicate' (entered at the event id #50). The JSONPath '$.case_key' specified for the field 'case_key.$' could not be found in the input '{\"case_id\":"
+  }
+ ],
+ "alarms": [
+  {
+   "name": "pv-mt-budget-sp-a-TokensUsedPct-60",
+   "state": "ALARM",
+   "kind": "expected",
+   "why": "task 128: per-tenant budget alarm provoked by scripts/budget_proof.py (the gate asserts it fires)",
+   "reason": "Threshold Crossed: 1 datapoint [99.45 (03/09/26 22:56:00)] was greater than or equal to the threshold (60.0)."
+  },
+  {
+   "name": "pv-mt-budget-sp-a-TokensUsedPct-85",
+   "state": "ALARM",
+   "kind": "expected",
+   "why": "task 128: per-tenant budget alarm provoked by scripts/budget_proof.py (the gate asserts it fires)",
+   "reason": "Threshold Crossed: 1 datapoint [99.45 (03/09/26 22:56:00)] was greater than or equal to the threshold (85.0)."
+  }
+ ],
+ "dlqs": {},
+ "lambda_errors_metric": {
+  "pv-mt-write-audit": 0,
+  "pv-mt-intake-icsr": 2,
+  "pv-mt-ingest-case": 0,
+  "pv-mt-assess-seriousness": 0,
+  "pv-mt-gateway-AttachmentProviderEF56056D-0v03AMRX3uxY": 0,
+  "pv-mt-request-signoff": 0,
+  "pv-mt-finalize": 0,
+  "pv-mt-observability-CustomS3AutoDeleteObjectsCusto-qT7g9wBn8z7R": 0,
+  "pv-mt-signoff-register": 0,
+  "pv-mt-approve-signoff": 0,
+  "pv-mt-observability-AWS679f53fac002430cb0da5b7982b-l3wfmaZgUZKu": 0,
+  "pv-mt-core-tools": 0,
+  "pv-mt-detect-duplicate": 0,
+  "pv-mt-kill-switch-disengage": 0,
+  "pv-mt-mask-pii": 0,
+  "pv-mt-kill-switch-engage": 0,
+  "pv-mt-record-causality": 0,
+  "pv-mt-budget-breach": 0,
+  "pv-mt-tenant-interceptor": 0,
+  "pv-mt-openfda-lookup": 0,
+  "pv-mt-workflow-guards": 0
+ },
+ "lambda_errors_note": "Errors>0 on intake-icsr/assess-seriousness/write-audit are the deliberate fail-closed TenantError refusals; see log_groups classification",
+ "unexpected_total": 0,
+ "verdict": "PASS"
+}

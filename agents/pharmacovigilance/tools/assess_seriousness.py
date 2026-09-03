@@ -54,9 +54,24 @@ def _case_text(e):
     return case
 
 
+def _coerce_flags(flags):
+    """The manifest declares `flags` as a STRING ("Optional JSON of explicit seriousness booleans"), so
+    the agent path hands us '{"hospitalization": true}' while the offline harness hands us a dict.
+    Accept both; anything that is not a JSON object (malformed string, list, number, "null") means
+    "no explicit flags" and the text scan decides. Found live 2026-09-03 (pv-mt e2e sweep): the
+    Runtime agent's calls crashed here with AttributeError('str'.get) and Cedar/gateway surfaced them
+    as isError rows - a fail-closed outcome, but a wrong one."""
+    if isinstance(flags, str):
+        try:
+            flags = json.loads(flags) if flags.strip() else {}
+        except Exception:
+            return {}
+    return flags if isinstance(flags, dict) else {}
+
+
 def _detect(e, text):
     """Return the ordered list of seriousness criteria met. Explicit flags override text scan."""
-    flags = e.get("flags") or {}
+    flags = _coerce_flags(e.get("flags"))
     met = []
     low = text.lower()
     for key, pat in _CRITERIA:

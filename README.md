@@ -3,8 +3,8 @@
 **New here? → [`START-HERE.md`](START-HERE.md).**
 
 > **SUPPORTED DEPLOYMENT PATH.** The ONE supported path is **AWS CDK** (`cdk/`, 7 stacks, prefix `pv-`)
-> at the validated release tag [`v0.1.1-pilot-rc1`](https://github.com/virtualryder/pharmacovigilance_agent/releases/tag/v0.1.1-pilot-rc1)
-> — target tag, **cut after the live EP1 validation** (`RELEASE-MANIFEST.md`). The shell engine
+> at the validated release tag [`v0.3.0-pilot-rc1`](https://github.com/virtualryder/pharmacovigilance_agent/releases/tag/v0.3.0-pilot-rc1)
+> — cut 2026-09-03 after the **live governed-core 1.9.0 multi-tenant gate** (`RELEASE-MANIFEST.md`; multi-tenant deployments add one data stack per tenant). The shell engine
 > (`lib/engine/`) is **legacy/internal reference only**.
 
 [![CI](https://github.com/virtualryder/pharmacovigilance_agent/actions/workflows/ci.yml/badge.svg)](https://github.com/virtualryder/pharmacovigilance_agent/actions/workflows/ci.yml)
@@ -44,10 +44,22 @@ financial-aid, and housing agents, from a reusable, manifest-driven template.
 > runbook defects. Both runs: `validate_deployment.py` PASS, the deterministic controller ran to the
 > human sign-off gate, DuplicateHold held, and the **strict PHI canary passed with 0 leaks**
 > (Logs / X-Ray / DLQ / Step Functions history), then torn down + residual-swept.
-> Evidence: `evidence/EP1-VALIDATION.md`; tag `v0.1.1-pilot-rc1`. Suite: **191 offline tests**
+> Evidence: `evidence/EP1-VALIDATION.md`; tag `v0.1.1-pilot-rc1` (then `v0.2.0-pilot-rc1` after EP2, `v0.3.0-pilot-rc1` after the 2026-09-03 1.9.0 gate). Suite: **192 offline tests**
 > (control-plane + 28 CDK synthesis assertions). Remaining before real PHI: QPPV SME sign-off,
 > enterprise IdP round-trip, concurrency / replay-storm testing under load, and independent security
 > testing — see `PV-PILOT-READINESS-PLAN.md`.
+
+> **governed-core 1.9.0 — the benefits pack's SaaS + observability + containment + budget deltas, live-gated
+> on PV (2026-09-03, env `pv-mt`, two tenants, real AgentCore Runtime; tag `v0.3.0-pilot-rc1`).** Hybrid
+> multi-tenant routing (one control plane, one data stack + WORM vault per tenant, HMAC-signed tenant on
+> every hop) — **12/12**; one correlation set through every hop (Runtime spans ↔ gateway rows ↔ Lambda
+> `aegis.call` ↔ WORM ↔ model-invocation log, masked-before-model True) — **13/13 per tenant**; strict PII
+> telemetry canary — **0 hits**; kill switch on the AgentCore path — **29/29**, 10 s to effect; per-tenant
+> token + USD budget with an AWS Budgets backstop that engages the kill switch — **24/24**; regression
+> sweep — **0 unexpected**. The sweep found one real product bug that every green proof had missed
+> (`assess_seriousness` crashed on the agent path's call shape; fixed + regression-tested). Records:
+> `evidence/AGENTCORE-111-GATE-2026-09-03.md`, `AGENTCORE-KILL-SWITCH-2026-09-03.md`,
+> `AGENTCORE-BUDGET-2026-09-03.md`; switches: `DEPLOYMENT-GUIDE.md` §1b–1d.
 
 ---
 
@@ -120,7 +132,7 @@ This is the only path that carries captured live evidence and the only one to us
 an evaluation, or a demo. Full steps: [`DEPLOYMENT-GUIDE.md`](DEPLOYMENT-GUIDE.md).
 
 ```bash
-git checkout v0.1.1-pilot-rc1                 # a validated release tag, never main
+git checkout v0.3.0-pilot-rc1                 # a validated release tag, never main
 cd cdk && pip install -r requirements.txt     # PINNED - the suite is only green at these versions
 npx --yes aws-cdk@2 bootstrap aws://<account>/us-east-1
 npx --yes aws-cdk@2 deploy --all --require-approval never \
@@ -130,7 +142,7 @@ npx --yes aws-cdk@2 deploy --all --require-approval never \
 
 Validate, then tear down with a zero-residual sweep — both scripted and documented in the
 deployment guide. Offline verification with no AWS account: `python -m pytest tests/ -q`
-(**191 tests**, including 28 CDK stack-synthesis security assertions).
+(**192 tests**, including 28 CDK stack-synthesis security assertions).
 
 <details>
 <summary><strong>Legacy shell engine — internal reference only, NOT the supported path</strong></summary>

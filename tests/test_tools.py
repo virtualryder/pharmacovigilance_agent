@@ -21,6 +21,25 @@ def test_assess_serious_expedited():
     assert r["clock_days"] == 15
 
 
+def test_assess_flags_as_json_string_matches_manifest_schema():
+    """The manifest types `flags` as a JSON *string*; the agent path sends it that way. Regression for
+    the pv-mt e2e sweep of 2026-09-03 (AttributeError: 'str' object has no attribute 'get')."""
+    r = call("assess_seriousness", {"flags": '{"hospitalization": true}', "expectedness": "unlisted",
+                                    "sanitized_ref": make_sanitized_ref()})
+    assert r["assessed"] is True and r["serious"] is True
+    assert r["reporting_category"] == "EXPEDITED" and any("hospitalization" in c for c in r["criteria_met"])
+    # explicit False in the string form still overrides the text scan
+    r = call("assess_seriousness", {"case": "patient was hospitalized", "flags": '{"hospitalization": false}',
+                                    "sanitized_ref": make_sanitized_ref(text="patient was hospitalized")})
+    assert r["serious"] is False
+    # malformed / non-object flags never crash: the text scan decides
+    for bad in ("not json", "[1,2]", "null", "", 7, ["death"]):
+        r = call("assess_seriousness", {"case": "the patient died", "flags": bad,
+                                        "sanitized_ref": make_sanitized_ref(text="the patient died")})
+        assert r["assessed"] is True, bad
+        assert r["serious"] is True and any("death" in c for c in r["criteria_met"]), bad
+
+
 def test_detect_duplicate():
     r = call("detect_duplicate", {"case_key": "a|b|c|d", "known_keys": "a|b|c|d; x|y|z|w"})
     assert r["duplicate_status"] == "DUPLICATE"
