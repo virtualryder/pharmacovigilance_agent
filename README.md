@@ -3,7 +3,7 @@
 **New here? → [`START-HERE.md`](START-HERE.md).**
 
 > **SUPPORTED DEPLOYMENT PATH.** The ONE supported path is **AWS CDK** (`cdk/`, 7 stacks, prefix `pv-`)
-> at the validated release tag [`v0.3.0-pilot-rc1`](https://github.com/virtualryder/pharmacovigilance_agent/releases/tag/v0.3.0-pilot-rc1)
+> at the validated release tag [`v0.4.0-pilot-rc1`](https://github.com/virtualryder/pharmacovigilance_agent/releases/tag/v0.4.0-pilot-rc1)
 > — cut 2026-09-03 after the **live governed-core 1.9.0 multi-tenant gate** (`RELEASE-MANIFEST.md`; multi-tenant deployments add one data stack per tenant). The shell engine
 > (`lib/engine/`) is **legacy/internal reference only**.
 
@@ -132,7 +132,7 @@ This is the only path that carries captured live evidence and the only one to us
 an evaluation, or a demo. Full steps: [`DEPLOYMENT-GUIDE.md`](DEPLOYMENT-GUIDE.md).
 
 ```bash
-git checkout v0.3.0-pilot-rc1                 # a validated release tag, never main
+git checkout v0.4.0-pilot-rc1                 # a validated release tag, never main
 cd cdk && pip install -r requirements.txt     # PINNED - the suite is only green at these versions
 npx --yes aws-cdk@2 bootstrap aws://<account>/us-east-1
 npx --yes aws-cdk@2 deploy --all --require-approval never \

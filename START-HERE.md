@@ -1,7 +1,7 @@
 # START HERE — Pharmacovigilance ICSR Intake Assistant
 
 *One page. What this is, what's proven, how to evaluate it, and what a pilot looks like. Target
-validated release: **[`v0.3.0-pilot-rc1`](https://github.com/virtualryder/pharmacovigilance_agent/releases/tag/v0.3.0-pilot-rc1)**
+validated release: **[`v0.4.0-pilot-rc1`](https://github.com/virtualryder/pharmacovigilance_agent/releases/tag/v0.4.0-pilot-rc1)**
 (cut 2026-09-03 after the live governed-core 1.9.0 multi-tenant gate; earlier validated tags `v0.1.1-pilot-rc1` (EP1) and `v0.2.0-pilot-rc1` (EP2); deploy tags, never `main`). Supported deployment path: **AWS CDK**
 (`cdk/`); the shell engine is legacy/internal.*
 
