@@ -118,6 +118,13 @@ class FakeDDBClient:
 class FakeS3:
     def __init__(self): self.puts = []
     def put_object(self, **kw): self.puts.append(kw)
+    def head_object(self, Bucket, Key):
+        # governed-core 1.10.1: WORM copy is repaired on replay; it was written on the first call.
+        for p in self.puts:
+            if p.get("Bucket") == Bucket and p.get("Key") == Key:
+                return {}
+        from botocore.exceptions import ClientError
+        raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
 
 
 def _deser(item):

@@ -74,10 +74,15 @@ def test_tools_list_and_silo_pass_through_unchanged():
     lst = _event(method="tools/list")
     out = ti.build_output(lst, SECRET, True)
     assert out["mcp"]["transformedGatewayRequest"]["body"] == lst["mcp"]["gatewayRequest"]["body"]
-    # silo mode: an un-tenanted tools/call passes through with NO injection
-    out = ti.build_output(_event(args={"case": "x"}), SECRET, False)
+    # silo mode: an un-tenanted tools/call carries NO tenant. 1.10.1 (deep-dive #3): the caller can no
+    # longer assert the Cedar context fields â€” a caller-supplied budget_ok is STRIPPED and the
+    # server-authoritative value (True, past the hard-breach gateway deny) is injected.
+    out = ti.build_output(_event(args={"case": "x", "budget_ok": "caller-lie"}), SECRET, False)
     args = out["mcp"]["transformedGatewayRequest"]["body"]["params"]["arguments"]
-    assert tenancy.TENANT_FIELD not in args and args == {"case": "x"}
+    assert tenancy.TENANT_FIELD not in args
+    assert args["case"] == "x"
+    assert args["budget_ok"] is True                 # authoritative, overwrote the caller's value
+    assert "within_service_window" not in args       # unconfigured -> not asserted
 
 
 def test_verify_rejects_bad_sig_and_bind_sets_routing_context(monkeypatch):

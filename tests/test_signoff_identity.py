@@ -155,7 +155,7 @@ def _fake_boto3(table_item):
 def test_approve_rejects_spoofed_string(monkeypatch):
     A = _load("approve_signoff")
     rec = {}
-    monkeypatch.setattr(A.evidence, "record_event", lambda ev, ctx, source=None: rec.update(ev) or {"stored": True})
+    monkeypatch.setattr(A.evidence, "record_event", lambda ev, ctx, source=None: rec.update(ev) or {"stored": True, "worm": True})
     # a caller-supplied approver string with NO token must be rejected (and recorded DENIED)
     r = A.handler({"case_id": "C1", "approver": "dr_spoof"}, _Ctx())
     assert r["approved"] is False
@@ -165,7 +165,7 @@ def test_approve_rejects_spoofed_string(monkeypatch):
 
 def test_approve_separation_of_duties(monkeypatch):
     A = _load("approve_signoff")
-    monkeypatch.setattr(A.evidence, "record_event", lambda ev, ctx, source=None: {"stored": True})
+    monkeypatch.setattr(A.evidence, "record_event", lambda ev, ctx, source=None: {"stored": True, "worm": True})
     # verified approver == requester -> SoD denial
     monkeypatch.setattr(A.identity, "verify_access_token",
                         lambda t, require_group=True: ({"username": "alice", "cognito:groups": ["pv_reviewer"]}, None))
@@ -178,7 +178,7 @@ def test_approve_separation_of_duties(monkeypatch):
 
 def test_approve_success_with_verified_token(monkeypatch):
     A = _load("approve_signoff")
-    monkeypatch.setattr(A.evidence, "record_event", lambda ev, ctx, source=None: {"stored": True})
+    monkeypatch.setattr(A.evidence, "record_event", lambda ev, ctx, source=None: {"stored": True, "worm": True})
     monkeypatch.setattr(A.identity, "verify_access_token",
                         lambda t, require_group=True: ({"username": "bob", "cognito:groups": ["pv_reviewer"]}, None))
     B, tbl, sfn = _fake_boto3({"case_id": "C1", "requester": "alice", "task_token": "tok", "status": "PENDING"})
@@ -190,14 +190,14 @@ def test_approve_success_with_verified_token(monkeypatch):
 
 def test_request_rejects_unverified(monkeypatch):
     R = _load("request_signoff")
-    monkeypatch.setattr(R.evidence, "record_event", lambda ev, ctx, source=None: {"stored": True})
+    monkeypatch.setattr(R.evidence, "record_event", lambda ev, ctx, source=None: {"stored": True, "worm": True})
     r = R.handler({"case_id": "C1", "requester": "spoof"}, _Ctx())
     assert r["requested"] is False and "not verified" in r["error"]
 
 
 def test_request_uses_verified_identity(monkeypatch):
     R = _load("request_signoff")
-    monkeypatch.setattr(R.evidence, "record_event", lambda ev, ctx, source=None: {"stored": True})
+    monkeypatch.setattr(R.evidence, "record_event", lambda ev, ctx, source=None: {"stored": True, "worm": True})
     monkeypatch.setattr(R.identity, "verify_access_token",
                         lambda t, require_group=True: ({"username": "alice", "cognito:groups": ["pv_reviewer"]}, None))
     started = {}
