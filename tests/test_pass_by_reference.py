@@ -33,7 +33,7 @@ def test_mask_by_ref_does_not_echo_masked_content(monkeypatch):
             # pretend "John Doe" (offsets 0-8) is a NAME entity
             return {"Entities": [{"BeginOffset": 0, "EndOffset": 8, "Type": "NAME"}]}
 
-    monkeypatch.setattr(mp.boto3, "client", lambda *_a, **_k: _FakeComprehend())
+    monkeypatch.setattr(mp.pii_detect.boto3, "client", lambda *_a, **_k: _FakeComprehend())
     st = sanitized.MemoryStore()
     monkeypatch.setattr(sanitized, "default_store", lambda: st)           # server-side artifact store
     ref = case_store.put_case("John Doe had a headache after the vaccine")

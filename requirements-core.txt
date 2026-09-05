@@ -16,7 +16,7 @@
 # version AND the hash together; they are published side by side on the release.
 #
 # Source: https://github.com/virtualryder/governed-core  (Apache-2.0, public)
-# Release: https://github.com/virtualryder/governed-core/releases/tag/v1.9.0
+# Release: https://github.com/virtualryder/governed-core/releases/tag/v1.10.0
 
-governed-core @ https://github.com/virtualryder/governed-core/releases/download/v1.9.0/governed_core-1.9.0-py3-none-any.whl \
-    --hash=sha256:f332a0a2c662b62b15ce36e649e4a4e8db6d75e5e7b20a72527f94facbbe124d
+governed-core @ https://github.com/virtualryder/governed-core/releases/download/v1.10.0/governed_core-1.10.0-py3-none-any.whl \
+    --hash=sha256:b69c2abede2119e0ed27fe0fbb63b68ad5fd4b1114855fa4e4f8c5f01b200aa2
