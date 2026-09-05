@@ -206,3 +206,13 @@ production authorization to operate. `meddra_code` and `whodrug_code` remain lic
 ## License
 
 Apache-2.0 — see [LICENSE](LICENSE).
+
+## Governed-core dependency currency (2026-09-05)
+
+This pack pins **governed-core 1.10.1** (`requirements-core.txt`, `--require-hashes`), inheriting the
+fault-semantics batch from the external-review response: a consequential commit requires the hash-chained
+ledger write AND the S3 Object-Lock WORM copy (`evidence.is_durable`, WORM repaired on replay);
+`request_signoff` / `approve_signoff` are fail-closed and un-strandable (durable evidence before any
+side effect); and the gateway interceptor makes the Cedar authorization-context fields
+(consent / purpose / budget_ok / within_service_window) authoritative rather than caller-asserted. Any
+earlier governed-core version references above are historical gate records, accurate as of their dates.
