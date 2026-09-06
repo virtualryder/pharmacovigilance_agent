@@ -603,3 +603,39 @@ def test_runtime_execution_role_without_guardrail_has_no_guardrail_condition():
                        if "RuntimeExecutionRole" in json.dumps(v["Properties"].get("Roles"))])
     assert "bedrock:InvokeModel" in pols and "bedrock:GuardrailIdentifier" not in pols and "ApplyGuardrail" not in pols
     T_COMPUTE.has_resource_properties("AWS::IAM::Role", Match.object_like({"RoleName": "pv-test-agentcore-runtime"}))
+
+
+# -- PAR-1 (port from benefits, 2026-09-06): #168 capture-all trail + WORM lineage --------------------
+
+def test_capture_trail_selects_bedrock_and_agentcore_data_events():
+    """The account capture trail (#168) must use ADVANCED selectors that record management events (where
+    CloudTrail logs InvokeModel / Converse) PLUS every documented Bedrock data-plane resource type and the
+    AgentCore Gateway, so a bypass through ApplyGuardrail / InvokeAgent / RetrieveAndGenerate / async or
+    bidirectional invokes / the gateway is captured in WORM custody too. Basic EventSelectors must be gone
+    (a trail cannot carry both)."""
+    from pv_stacks.lineage_stack import LineageStack
+    app = aws_cdk.App()
+    t = Template.from_stack(LineageStack(app, "lp", prefix="pv-ptest"))
+    trails = t.find_resources("AWS::CloudTrail::Trail")
+    assert len(trails) == 1
+    props = next(iter(trails.values()))["Properties"]
+    assert "EventSelectors" not in props, "basic EventSelectors must be removed when advanced selectors are used"
+    sel = props["AdvancedEventSelectors"]
+    types = set()
+    mgmt = False
+    for s in sel:
+        fields = {f["Field"]: f["Equals"] for f in s["FieldSelectors"]}
+        if fields.get("eventCategory") == ["Management"]:
+            mgmt = True
+        for rt in fields.get("resources.type", []):
+            types.add(rt)
+        assert len(fields.get("resources.type", [])) <= 1, "one resources.type per advanced selector"
+    assert mgmt, "management events (InvokeModel / Converse live here) must be selected"
+    for rt in ("AWS::S3::Object", "AWS::Lambda::Function", "AWS::Bedrock::Model", "AWS::Bedrock::AsyncInvoke",
+               "AWS::Bedrock::Guardrail", "AWS::Bedrock::KnowledgeBase", "AWS::Bedrock::AgentAlias",
+               "AWS::Bedrock::InlineAgent", "AWS::Bedrock::FlowAlias",
+               "AWS::BedrockAgentCore::Gateway", "AWS::BedrockAgentCore::Runtime", "AWS::BedrockAgentCore::RuntimeEndpoint"):
+        assert rt in types, f"capture trail no longer selects data events for {rt}"
+    assert props.get("IsMultiRegionTrail") is True and props.get("EnableLogFileValidation") is True
+    # live-rejected by CloudTrail (2026-09-05): never let it back in
+    assert "AWS::Bedrock::Prompt" not in types

@@ -21,6 +21,7 @@ import shutil
 
 import aws_cdk as cdk
 
+from pv_stacks.lineage_stack import LineageStack
 from pv_stacks.data_stack import DataStack
 from pv_stacks.network_stack import NetworkStack
 from pv_stacks.compute_stack import ComputeStack
@@ -149,6 +150,16 @@ gateway = GatewayStack(app, f"{prefix}-gateway", prefix=prefix, compute=compute,
 # Phase 110 (full transparency): -c model_logging=1 turns on Bedrock MODEL INVOCATION LOGGING for the
 # account+region (it is an account-level singleton - it replaces any existing configuration, so it is
 # opt-in) and delivers the gateway's vended request logs; the runtime's spans/logs are AgentCore-managed.
+# #168 (capture EVERY API call in the account; PAR-1 port from benefits 2026-09-06): -c capture_all=1
+# provisions ONE account trail (management ALL + S3/Lambda/Bedrock/AgentCore DATA events, multi-region,
+# file validation) delivered to CloudWatch Logs AND a WORM Object-Lock bucket, so scripts/lineage_proof.py
+# can prove every governed API call is captured and joinable. Account-level + cost -> opt-in.
+lineage = None
+if str(app.node.try_get_context("capture_all") or "").lower() in ("1", "true", "yes"):
+    lineage = LineageStack(app, f"{prefix}-lineage", prefix=prefix,
+                           retention_days=int(app.node.try_get_context("capture_retention_days") or 1),
+                           lock_mode=app.node.try_get_context("capture_lock_mode") or "GOVERNANCE")
+
 observability = ObservabilityStack(app, f"{prefix}-observability", prefix=prefix,
                                    compute=compute, workflow=workflow, data=data, gateway=gateway,
                                    model_logging=bool(app.node.try_get_context("model_logging")),
@@ -159,7 +170,7 @@ observability = ObservabilityStack(app, f"{prefix}-observability", prefix=prefix
                                    runtime_role_name=app.node.try_get_context("runtime_role") or "")
 
 for s in (data, compute, workflow, identity, observability, gateway) + ((network,) if network else ()) \
-        + tuple(tenant_data.values()):
+        + tuple(tenant_data.values()) + ((lineage,) if lineage else ()):
     cdk.Tags.of(s).add("app", "pv-icsr-agent")
     cdk.Tags.of(s).add("env", env_name)
     cdk.Tags.of(s).add("cost-center", "governed-agents")
