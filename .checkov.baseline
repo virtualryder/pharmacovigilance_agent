@@ -1,0 +1,384 @@
+{
+    "failed_checks": [
+        {
+            "file": "/pv-dev-compute.template.json",
+            "findings": [
+                {
+                    "resource": "AWS::DynamoDB::Table.Budgets847BC00E",
+                    "check_ids": [
+                        "CKV_AWS_119",
+                        "CKV_AWS_28"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.ApproveSignoff16B7C583",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.AssessSeriousness29BF47CA",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.CoreToolsF8BE44BF",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.DetectDuplicate50DB20F0",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.FinalizeB6412576",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.IngestCaseDFD985CA",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.IntakeIcsr7B0A0A9F",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.KillSwitchDisengageF0C2AAED",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.KillSwitchEngageB987441B",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.MaskPiiC3055061",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.OpenfdaLookup541147F7",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.RecordCausality7E935A60",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.RequestSignoff5E0944B7",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.SignoffRegister99F0D845",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.TenantInterceptor5715A97F",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.WorkflowGuardsFD744B0C",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.WriteAuditB581F064",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117",
+                        "CKV_AWS_173"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.ApproveSignoffLogs2C31F944",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.AssessSeriousnessLogsEE89C352",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.CoreToolsLogs00BF7706",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.DetectDuplicateLogsAB12D21D",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.FinalizeLogsBF61A3F4",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.IngestCaseLogs2E6666EC",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.IntakeIcsrLogs5242E4BD",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.KillSwitchDisengageLogs77569133",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.KillSwitchEngageLogs6783CDB3",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.MaskPiiLogs477773D0",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.OpenfdaLookupLogs80660B77",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.RecordCausalityLogs113F1604",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.RequestSignoffLogsC3D21705",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.SignoffRegisterLogsD74B525E",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.TenantInterceptorLogs1BA59DBF",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.WorkflowGuardsLogs0163CE5A",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.WriteAuditLogs231ABE65",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::SecretsManager::Secret.SigningSecretCF7EC744",
+                    "check_ids": [
+                        "CKV_AWS_149"
+                    ]
+                }
+            ]
+        },
+        {
+            "file": "/pv-dev-data.template.json",
+            "findings": [
+                {
+                    "resource": "AWS::DynamoDB::Table.AuditLedger0E438CA2",
+                    "check_ids": [
+                        "CKV_AWS_119"
+                    ]
+                },
+                {
+                    "resource": "AWS::DynamoDB::Table.AuthzContext97A2CCBF",
+                    "check_ids": [
+                        "CKV_AWS_119",
+                        "CKV_AWS_28"
+                    ]
+                },
+                {
+                    "resource": "AWS::DynamoDB::Table.CaseStore9F124C9B",
+                    "check_ids": [
+                        "CKV_AWS_119",
+                        "CKV_AWS_28"
+                    ]
+                },
+                {
+                    "resource": "AWS::DynamoDB::Table.PendingApprovals93A61272",
+                    "check_ids": [
+                        "CKV_AWS_119",
+                        "CKV_AWS_28"
+                    ]
+                },
+                {
+                    "resource": "AWS::DynamoDB::Table.SanitizedArtifacts6DFFAB8E",
+                    "check_ids": [
+                        "CKV_AWS_119",
+                        "CKV_AWS_28"
+                    ]
+                },
+                {
+                    "resource": "AWS::S3::Bucket.WormVault2878B4F9",
+                    "check_ids": [
+                        "CKV_AWS_18"
+                    ]
+                }
+            ]
+        },
+        {
+            "file": "/pv-dev-gateway.template.json",
+            "findings": [
+                {
+                    "resource": "AWS::Lambda::Function.AttachmentProviderEF56056D",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117"
+                    ]
+                }
+            ]
+        },
+        {
+            "file": "/pv-dev-observability.template.json",
+            "findings": [
+                {
+                    "resource": "AWS::CloudTrail::Trail.WormDataEvents978B658E",
+                    "check_ids": [
+                        "CKV_AWS_35",
+                        "CKV_AWS_67"
+                    ]
+                },
+                {
+                    "resource": "AWS::Lambda::Function.CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F",
+                    "check_ids": [
+                        "CKV_AWS_115",
+                        "CKV_AWS_116",
+                        "CKV_AWS_117"
+                    ]
+                },
+                {
+                    "resource": "AWS::Logs::LogGroup.GatewayRequestLogs39D1271F",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                },
+                {
+                    "resource": "AWS::S3::Bucket.WormDataEventsLogsA2533E18",
+                    "check_ids": [
+                        "CKV_AWS_18"
+                    ]
+                },
+                {
+                    "resource": "AWS::SNS::Topic.Alarms04B5A0BF",
+                    "check_ids": [
+                        "CKV_AWS_26"
+                    ]
+                }
+            ]
+        },
+        {
+            "file": "/pv-dev-workflow.template.json",
+            "findings": [
+                {
+                    "resource": "AWS::Logs::LogGroup.ControllerLogsA1749C6A",
+                    "check_ids": [
+                        "CKV_AWS_158"
+                    ]
+                }
+            ]
+        }
+    ]
+}

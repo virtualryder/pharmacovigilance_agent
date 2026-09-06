@@ -989,3 +989,45 @@ def test_perimeter_profile_attaches_the_gates_and_declares_their_fields():
     assert base and not (base - peri), "the baseline set must be unchanged by the perimeter profile"
     for f in ("consent", "purpose", "budget_ok", "within_service_window", "case_id"):
         assert f in _PERIMETER_INPUT_FIELDS
+
+
+# ── CHK-1: hardened trail log bucket + Log4j WAF rule group (2026-09-06) ────────────────────────
+
+
+def test_evidence_trail_delivers_into_a_declared_hardened_bucket():
+    """The data-events trail on the WORM vault proves nobody but the gateway touched the evidence.
+    Its OWN log bucket was a CDK auto-created default that synthesized with no properties at all -
+    no block-public-access, no TLS enforcement, no versioning, no declared encryption (checkov
+    CKV_AWS_53/54/55/56/21/35). Found by the CHK-1 sizing scan, 2026-09-06."""
+    from pv_stacks.observability_stack import ObservabilityStack
+    app = aws_cdk.App()
+    asset = stage_lambda_bundle()
+    data = DataStack(app, "cd", prefix="pv-chk1")
+    compute = ComputeStack(app, "cc", prefix="pv-chk1", asset_dir=asset, data=data)
+    workflow = WorkflowStack(app, "cw", prefix="pv-chk1", compute=compute, data=data)
+    t = Template.from_stack(ObservabilityStack(app, "co", prefix="pv-chk1", compute=compute,
+                                               workflow=workflow, data=data))
+    t.has_resource_properties("AWS::S3::Bucket", Match.object_like({
+        "PublicAccessBlockConfiguration": {
+            "BlockPublicAcls": True, "BlockPublicPolicy": True,
+            "IgnorePublicAcls": True, "RestrictPublicBuckets": True},
+        "VersioningConfiguration": {"Status": "Enabled"},
+        "BucketEncryption": Match.any_value(),
+    }))
+    # and the trail is wired to a bucket this stack declares, not to an implicit one
+    t.has_resource_properties("AWS::CloudTrail::Trail", Match.object_like({
+        "TrailName": Match.string_like_regexp(r".*-worm-data-events$"),
+        "EnableLogFileValidation": True,
+        "S3BucketName": {"Ref": Match.string_like_regexp("WormDataEventsLogs.*")},
+    }))
+
+
+def test_waf_inspects_for_known_bad_inputs_including_log4j():
+    """checkov CKV_AWS_192: the Common Rule Set does not by itself inspect for a Log4j2 JNDI
+    lookup; the Known Bad Inputs managed group (Log4JRCE) is attached alongside it."""
+    t = Template.from_stack(IdentityStack(aws_cdk.App(), "iw2", prefix="pv-wtest", waf=True))
+    t.has_resource_properties("AWS::WAFv2::WebACL", Match.object_like({
+        "Rules": Match.array_with([
+            Match.object_like({"Statement": {"ManagedRuleGroupStatement": Match.object_like(
+                {"VendorName": "AWS", "Name": "AWSManagedRulesKnownBadInputsRuleSet"})}}),
+        ])}))

@@ -1,0 +1,121 @@
+name: Security
+
+# SEC-1 (fourth external review R4-13, "security pipeline coverage is inconsistent"): every pack now
+# runs the SAME five gates, and every one of them is BLOCKING. Before this, the packs ran only
+# pip-audit + SBOM, while the platform repo alone ran static analysis, secret detection and IaC
+# scanning - so a finding could land in a pack and never be seen.
+#
+#   1. static analysis  - bandit (Python security linter), HARD FAIL on medium+/medium+.
+#   2. secret detection - detect-secrets against a REVIEWED committed .secrets.baseline; any string
+#                         that is not already in the baseline fails the build.
+#   3. IaC scanning     - checkov over the SYNTHESIZED CloudFormation (not the CDK source, which it
+#                         cannot see through), against a committed .checkov.baseline; new findings fail.
+#   4. code scanning    - CodeQL (security-extended) for the query classes bandit does not cover.
+#   5. container scan   - trivy on the AgentCore Runtime image actually built from lib/runtime, HIGH
+#                         and CRITICAL fail. The runtime image is the one artifact that reaches
+#                         production without going through pip-audit's requirements view.
+#
+# Nothing here is report-only. A gate that cannot fail the build is documentation, not a control.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly re-run: advisories land after a commit does, so a repo with no pushes still gets scanned.
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  static-analysis:
+    name: bandit · secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install scanners (pinned)
+        run: python -m pip install --quiet "bandit==1.9.4" "detect-secrets==1.5.0"
+
+      # B101 (assert) is skipped: the test suite and the CDK assertions are assert-based by design.
+      - name: Static analysis (bandit) - BLOCKING
+        run: bandit -r agents lib cdk scripts tools -ll -ii --skip B101
+
+      - name: Secret detection (detect-secrets) - BLOCKING against the reviewed baseline
+        run: |
+          detect-secrets scan --baseline .secrets.baseline
+          git diff --exit-code .secrets.baseline \
+            || { echo "::error::new potential secret(s) not in .secrets.baseline - review, then re-baseline deliberately"; exit 1; }
+
+  iac-scan:
+    name: checkov (synthesized CloudFormation)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install CDK + checkov (pinned)
+        run: |
+          python -m pip install --quiet -r cdk/requirements.txt "checkov==3.2.489"
+          npm install --no-save aws-cdk@2
+
+      # checkov reads CloudFormation, not CDK Python - so the app must be synthesized first or the
+      # scan silently passes over an empty tree. The default profile is the one a pilot deploys.
+      - name: Synthesize
+        working-directory: cdk
+        run: npx cdk synth --quiet
+
+      - name: IaC scan - BLOCKING against the committed baseline
+        working-directory: cdk
+        run: |
+          python -m checkov.main -d cdk.out --framework cloudformation \
+            --baseline ../.checkov.baseline --compact --quiet
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-extended
+
+      - uses: github/codeql-action/analyze@v3
+
+  container-scan:
+    name: trivy (AgentCore Runtime image)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The runtime image is what AgentCore actually runs. pip-audit sees requirements.txt; only an
+      # image scan sees the base image's OS packages, which is where most CRITICALs live.
+      - name: Build the runtime image
+        run: docker build -t aegis-runtime:ci lib/runtime
+
+      - name: Scan the runtime image - BLOCKING on HIGH/CRITICAL
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: aegis-runtime:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL

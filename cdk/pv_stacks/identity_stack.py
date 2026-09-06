@@ -131,8 +131,20 @@ class IdentityStack(cdk.Stack):
                         visibility_config=wafv2.CfnWebACL.VisibilityConfigProperty(
                             sampled_requests_enabled=True, cloud_watch_metrics_enabled=True,
                             metric_name=f"{prefix}-waf-common")),
+                    # CHK-1 (2026-09-06, checkov CKV_AWS_192): the Common Rule Set alone does not
+                    # inspect for a Log4j2 JNDI lookup. The Known Bad Inputs group carries Log4JRCE
+                    # plus the host/header exploit signatures and is the AWS-recommended companion.
                     wafv2.CfnWebACL.RuleProperty(
-                        name="RateLimitPerIp", priority=2,
+                        name="KnownBadInputs", priority=2,
+                        override_action=wafv2.CfnWebACL.OverrideActionProperty(none={}),
+                        statement=wafv2.CfnWebACL.StatementProperty(
+                            managed_rule_group_statement=wafv2.CfnWebACL.ManagedRuleGroupStatementProperty(
+                                vendor_name="AWS", name="AWSManagedRulesKnownBadInputsRuleSet")),
+                        visibility_config=wafv2.CfnWebACL.VisibilityConfigProperty(
+                            sampled_requests_enabled=True, cloud_watch_metrics_enabled=True,
+                            metric_name=f"{prefix}-waf-badinputs")),
+                    wafv2.CfnWebACL.RuleProperty(
+                        name="RateLimitPerIp", priority=3,
                         action=wafv2.CfnWebACL.RuleActionProperty(block={}),
                         statement=wafv2.CfnWebACL.StatementProperty(
                             rate_based_statement=wafv2.CfnWebACL.RateBasedStatementProperty(

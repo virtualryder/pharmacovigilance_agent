@@ -127,8 +127,34 @@ class ObservabilityStack(cdk.Stack):
         # Management events are NONE (the platform evidence trail owns those + DynamoDB data events
         # for all tables), so this trail bills only per data event — cents at pilot volume.
         if data is not None and getattr(data, "worm_bucket", None) is not None:
+            # CHK-1 (2026-09-06): the trail's log bucket is DECLARED, not left to the L2 default.
+            # The CDK auto-created trail bucket synthesized with no properties at all - no
+            # block-public-access, no TLS enforcement, no versioning, no declared encryption
+            # (checkov CKV_AWS_53/54/55/56/21/35). A trail whose whole job is to prove nobody
+            # tampered with the evidence must not itself deliver into an unhardened bucket, so it
+            # gets the same shape as the rest of the evidence estate. Object Lock is deliberately
+            # NOT set here: this bucket holds the tamper-EVIDENCE (digest-validated by
+            # EnableLogFileValidation); the evidence objects themselves live in the WORM vault.
+            evidence_cmk = getattr(data, "cmk", None)
+            evidence_locked = int(transparency_lock_days or 0) > 0
+            evidence_kw = dict(
+                block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+                enforce_ssl=True,
+                versioned=True,
+                encryption=(s3.BucketEncryption.KMS if evidence_cmk is not None
+                            else s3.BucketEncryption.S3_MANAGED),
+                encryption_key=evidence_cmk)
+            # Same retention shape as the rest of the regulated-data estate: under the production
+            # profile the trail's own log bucket is RETAINED and never auto-emptied; the sandbox
+            # default keeps the destroy/auto-delete teardown shape the portfolio gate asserts.
+            if evidence_locked:
+                evidence_kw.update(removal_policy=cdk.RemovalPolicy.RETAIN)
+            else:
+                evidence_kw.update(removal_policy=cdk.RemovalPolicy.DESTROY, auto_delete_objects=True)
+            evidence_logs = s3.Bucket(self, "WormDataEventsLogs", **evidence_kw)
             evidence_trail = cloudtrail.Trail(
                 self, "WormDataEvents", trail_name=f"{prefix}-worm-data-events",
+                bucket=evidence_logs,
                 management_events=cloudtrail.ReadWriteType.NONE,
                 include_global_service_events=False, is_multi_region_trail=False)
             evidence_trail.add_event_selector(
