@@ -216,3 +216,5 @@ ledger write AND the S3 Object-Lock WORM copy (`evidence.is_durable`, WORM repai
 side effect); and the gateway interceptor makes the Cedar authorization-context fields
 (consent / purpose / budget_ok / within_service_window) authoritative rather than caller-asserted. Any
 earlier governed-core version references above are historical gate records, accurate as of their dates.
+
+**Contributing to `lib/` (REL-4).** `lib/` is the hash-pinned governance-core overlay: any change there must regenerate `lib/core.lock` in the same commit (`python lib/regen_core_lock.py --set <version>`), or CI's `lib/verify_core.py` gate turns red and the supported tag falls behind the fixed core. `bash tools/install_hooks.sh` installs a pre-commit hook that refuses such a commit locally.

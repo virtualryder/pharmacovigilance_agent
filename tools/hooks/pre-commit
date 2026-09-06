@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# REL-4 (third external review, 2026-09-05): a relock is PART of a core change, not a follow-up.
+# If this commit touches lib/ (the hash-pinned governance core overlay), lib/core.lock must verify
+# against the working tree - otherwise CI (lib/verify_core.py) turns red after the push and the
+# supported tag ends up behind the fixed core. Install with: bash tools/install_hooks.sh
+set -e
+if git diff --cached --name-only | grep -qE '^lib/'; then
+  if ! python lib/verify_core.py >/dev/null 2>&1; then
+    echo "pre-commit: lib/ changed but lib/core.lock does not verify (lib/verify_core.py)." >&2
+    echo "            run: python lib/regen_core_lock.py --set <version>   and stage lib/core.lock + lib/CORE_VERSION" >&2
+    exit 1
+  fi
+fi
