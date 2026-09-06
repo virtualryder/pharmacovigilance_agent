@@ -84,6 +84,17 @@ def budget_from_manifest(app):
         b["prices_json"] = json.dumps(json.load(fh), separators=(",", ":"))
     return b
 
+def guardrail_from_manifest():
+    """#166 (PAR-1 port): the Bedrock guardrail is created as IaC from the manifest `guardrail:` block
+    (name, PII ANONYMIZE entities, prompt-attack strength) unless an external `-c guardrail_id` is
+    supplied, folding in the manifest `grounding:` thresholds for the contextual-grounding policy."""
+    import yaml
+    m = yaml.safe_load(open(os.path.join(REPO, "agents", "pharmacovigilance", "manifest.yaml"), encoding="utf-8"))
+    g = dict((m or {}).get("guardrail") or {})
+    g["grounding"] = dict((m or {}).get("grounding") or {})
+    return g
+
+
 def runtime_name_from_manifest():
     """The AgentCore runtime name (manifest `runtime.name`, falling back to the render.py default) - the
     IaC execution role scopes its log-group and workload-identity resources to it (RT-3)."""
@@ -137,6 +148,8 @@ compute = ComputeStack(app, f"{prefix}-compute", prefix=prefix, asset_dir=asset_
                        # generations are guardrail-assessed (-c guardrail_id=... -c guardrail_version=1)
                        guardrail_id=app.node.try_get_context("guardrail_id") or "",
                        guardrail_version=str(app.node.try_get_context("guardrail_version") or "1"),
+                       # #166: create the Bedrock guardrail as IaC from the manifest when no external id is given
+                       guardrail_config=guardrail_from_manifest(),
                        # G2 approval-path verification: the identity pool/client feed approve-signoff
                        # (Cognito token verification). approvals_client_id lets a sandbox pass a
                        # CLI-auth demo client without touching the IaC gateway client.

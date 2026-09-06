@@ -15,7 +15,7 @@ governed-core 1.9.0 parity with benefits (2026-09-03): hybrid multi-tenant routi
 benefits pack; the only differences are the PV tool set, the reviewer group, the SSM root
 (/<prefix>-pharmacovigilance/) and the state-machine name."""
 import aws_cdk as cdk
-from aws_cdk import (aws_dynamodb as ddb, aws_ec2 as ec2, aws_iam as iam, aws_kms as kms,
+from aws_cdk import (aws_bedrock as bedrock, aws_dynamodb as ddb, aws_ec2 as ec2, aws_iam as iam, aws_kms as kms,
                      aws_lambda as lambda_, aws_logs as logs, aws_secretsmanager as sm, aws_ssm as ssm)
 from constructs import Construct
 
@@ -31,7 +31,7 @@ def drafter_role_name(prefix):
 class ComputeStack(cdk.Stack):
     def __init__(self, scope: Construct, cid: str, *, prefix: str, asset_dir: str, data,
                  provenance_secret: str = "", network=None, tenant: str = "",
-                 guardrail_id: str = "", guardrail_version: str = "1",
+                 guardrail_id: str = "", guardrail_version: str = "1", guardrail_config: dict = None,
                  identity=None, approvals_client_id: str = "", multitenant: bool = False,
                  global_kill_switch: str = "", budget: dict = None, runtime_name: str = "", **kw):
         super().__init__(scope, cid, **kw)
@@ -39,8 +39,64 @@ class ComputeStack(cdk.Stack):
         # the runtime name and the deployment's SSM root / kill switch.
         self._runtime_name = runtime_name or "pv_runtime_agent"
         self._global_kill_switch = global_kill_switch
-        self.guardrail_arn = ""
         code = lambda_.Code.from_asset(asset_dir)
+
+        # ── #166: Bedrock Guardrail as IaC (PAR-1 port from benefits, 2026-09-06) ─────────────
+        # If an external guardrail id is supplied (-c guardrail_id) it wins (platform-managed guardrail);
+        # otherwise create the guardrail here from the manifest `guardrail:` block so a from-zero CDK
+        # deploy is self-contained. PII entities -> ANONYMIZE, prompt-attack -> the declared strength.
+        # A published version is created and PINNED (never DRAFT) so the drafter assesses against an
+        # immutable version; the drafter fails closed on ANY guardrail_intervened.
+        gcfg = guardrail_config or {}
+        self.guardrail = None
+        self.guardrail_arn = ""
+        if not guardrail_id and gcfg.get("name"):
+            pa = (gcfg.get("prompt_attack") or "HIGH").upper()
+            pii = [{"type": t, "action": "ANONYMIZE"} for t in gcfg.get("pii_anonymize", [])]
+            # #150/#190: contextual grounding policy from the manifest `grounding:` thresholds. GROUNDING
+            # scores how well the drafted text is supported by the grounding_source; RELEVANCE how well it
+            # answers the query. The drafter tags its Converse content with those qualifiers and fails
+            # closed on intervention. L14: the deterministic assessment travels INTO the grounding source
+            # (see the drafter), otherwise a stated determination is legitimately ungrounded.
+            gnd = gcfg.get("grounding") or {}
+            grounding_filters = []
+            if gnd.get("grounding_threshold") is not None:
+                grounding_filters.append(bedrock.CfnGuardrail.ContextualGroundingFilterConfigProperty(
+                    type="GROUNDING", threshold=float(gnd["grounding_threshold"])))
+            if gnd.get("relevance_threshold") is not None:
+                grounding_filters.append(bedrock.CfnGuardrail.ContextualGroundingFilterConfigProperty(
+                    type="RELEVANCE", threshold=float(gnd["relevance_threshold"])))
+            self.guardrail = bedrock.CfnGuardrail(
+                self, "Guardrail",
+                name=f"{prefix}-{gcfg['name']}",
+                description=gcfg.get("description", "Aegis pharmacovigilance output guardrail (IaC)"),
+                blocked_input_messaging="Blocked by the Aegis pharmacovigilance guardrail.",
+                blocked_outputs_messaging="[Output withheld by the Aegis pharmacovigilance guardrail.]",
+                content_policy_config=bedrock.CfnGuardrail.ContentPolicyConfigProperty(
+                    filters_config=[bedrock.CfnGuardrail.ContentFilterConfigProperty(
+                        type="PROMPT_ATTACK", input_strength=pa, output_strength="NONE")]),
+                sensitive_information_policy_config=(
+                    bedrock.CfnGuardrail.SensitiveInformationPolicyConfigProperty(
+                        pii_entities_config=[bedrock.CfnGuardrail.PiiEntityConfigProperty(
+                            type=e["type"], action=e["action"]) for e in pii]) if pii else None),
+                contextual_grounding_policy_config=(
+                    bedrock.CfnGuardrail.ContextualGroundingPolicyConfigProperty(
+                        filters_config=grounding_filters) if grounding_filters else None),
+            )
+            # A guardrail VERSION is an immutable snapshot; CfnGuardrailVersion does NOT auto-republish
+            # when the policies change (found live on benefits 2026-09-05). A config signature in the
+            # description makes a policy change replace the version -> fresh published version.
+            _cfg_sig = "pa=%s;pii=%d;gnd=%s;rel=%s" % (
+                pa, len(pii), gnd.get("grounding_threshold"), gnd.get("relevance_threshold"))
+            ver = bedrock.CfnGuardrailVersion(self, "GuardrailVersion",
+                                              guardrail_identifier=self.guardrail.attr_guardrail_id,
+                                              description="aegis-guardrail cfg " + _cfg_sig)
+            guardrail_id = self.guardrail.attr_guardrail_id
+            guardrail_version = ver.attr_version
+            self.guardrail_arn = self.guardrail.attr_guardrail_arn
+            cdk.CfnOutput(self, "GuardrailId", value=guardrail_id)
+            cdk.CfnOutput(self, "GuardrailVersionOut", value=guardrail_version, export_name=None)
+            cdk.CfnOutput(self, "GuardrailArnOut", value=self.guardrail_arn)
         cmk = None
         if getattr(data, "cmk", None) is not None:
             cmk = kms.Key.from_key_arn(self, "DataCmk", data.cmk.key_arn)

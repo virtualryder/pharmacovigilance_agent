@@ -3,7 +3,7 @@
 **Product:** Pharmacovigilance ICSR Intake **Assistant** (never an autonomous submitter or
 causality-committer). **Repo:** `github.com/virtualryder/pharmacovigilance_agent`. **Target tag:**
 `v0.1.1-pilot-rc1` (cut after live EP1 — **done 2026-07-27**); current tag `v0.3.0-pilot-rc1` (governed-core 1.9.0 live gate — **done 2026-09-03**). **Build state:** control-plane hardened +
-full CDK/Gate-B IaC, **live EP1-validated**; **219 offline tests** (control-plane + 38 CDK synthesis + 3 CI-completeness gates + the core-dependency gate).
+full CDK/Gate-B IaC, **live EP1-validated**; **224 offline tests** (control-plane + 41 CDK synthesis + 3 CI-completeness gates + the core-dependency gate).
 **Owner:** David Ryder (AWS HCLS SA).
 
 ---
@@ -24,7 +24,7 @@ full CDK/Gate-B IaC, **live EP1-validated**; **219 offline tests** (control-plan
 | Area | Status |
 |---|---|
 | Control plane (signed sanitized_ref P0-1, token boundary P0-3, deterministic guards P0-2, no-fabrication openFDA P0-4) | ✅ |
-| AWS CDK 7-stack set (`cdk/pv_stacks`) + Gate-B switches | ✅ synth-validated (38 CDK assertions) |
+| AWS CDK 7-stack set (`cdk/pv_stacks`) + Gate-B switches | ✅ synth-validated (41 CDK assertions) |
 | Deterministic Step Functions controller w/ DuplicateHold terminal | ✅ (in CDK) |
 | Release discipline (`RELEASE` + manifest + `VALIDATED_RELEASE` + consistency gate) | ✅ |
 | START-HERE, DEPLOYMENT-GUIDE, PILOT-SCOPE, threat model, data-source policy, Gate-B checklist | ✅ |

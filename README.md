@@ -44,8 +44,8 @@ financial-aid, and housing agents, from a reusable, manifest-driven template.
 > runbook defects. Both runs: `validate_deployment.py` PASS, the deterministic controller ran to the
 > human sign-off gate, DuplicateHold held, and the **strict PHI canary passed with 0 leaks**
 > (Logs / X-Ray / DLQ / Step Functions history), then torn down + residual-swept.
-> Evidence: `evidence/EP1-VALIDATION.md`; tag `v0.1.1-pilot-rc1` (then `v0.2.0-pilot-rc1` after EP2, `v0.3.0-pilot-rc1` after the 2026-09-03 1.9.0 gate). Suite: **219 offline tests**
-> (control-plane + 38 CDK synthesis assertions). Remaining before real PHI: QPPV SME sign-off,
+> Evidence: `evidence/EP1-VALIDATION.md`; tag `v0.1.1-pilot-rc1` (then `v0.2.0-pilot-rc1` after EP2, `v0.3.0-pilot-rc1` after the 2026-09-03 1.9.0 gate). Suite: **224 offline tests**
+> (control-plane + 41 CDK synthesis assertions). Remaining before real PHI: QPPV SME sign-off,
 > enterprise IdP round-trip, concurrency / replay-storm testing under load, and independent security
 > testing — see `PV-PILOT-READINESS-PLAN.md`.
 
@@ -142,7 +142,7 @@ npx --yes aws-cdk@2 deploy --all --require-approval never \
 
 Validate, then tear down with a zero-residual sweep — both scripted and documented in the
 deployment guide. Offline verification with no AWS account: `python -m pytest tests/ -q`
-(**219 tests**, including 38 CDK stack-synthesis security assertions).
+(**224 tests**, including 41 CDK stack-synthesis security assertions).
 
 <details>
 <summary><strong>Legacy shell engine — internal reference only, NOT the supported path</strong></summary>
@@ -219,4 +219,4 @@ earlier governed-core version references above are historical gate records, accu
 
 **Contributing to `lib/` (REL-4).** `lib/` is the hash-pinned governance-core overlay: any change there must regenerate `lib/core.lock` in the same commit (`python lib/regen_core_lock.py --set <version>`), or CI's `lib/verify_core.py` gate turns red and the supported tag falls behind the fixed core. `bash tools/install_hooks.sh` installs a pre-commit hook that refuses such a commit locally.
 
-> **Parity note (2026-09-06).** Pinning governed-core is not the same as wiring its controls into this pack's IaC. The platform's generated matrix [`WOGplatform/docs/PACK-PARITY.md`](https://github.com/virtualryder/WOGplatform/blob/main/docs/PACK-PARITY.md) shows exactly which controls are wired here versus the lead (benefits) pack; a control absent there is absent here, not "pending validation". PAR-1 (2026-09-06) ported the 2026-09-05 benefits controls here (capture-all lineage, enforcement perimeter, restore-aware model logging, pinned drafter role, regulated invocation-log store) — **offline-gated on this pack, live-proven only on benefits** until its REL-5 live re-gate.
+> **Parity note (2026-09-06).** Pinning governed-core is not the same as wiring its controls into this pack's IaC. The platform's generated matrix [`WOGplatform/docs/PACK-PARITY.md`](https://github.com/virtualryder/WOGplatform/blob/main/docs/PACK-PARITY.md) shows exactly which controls are wired here versus the lead (benefits) pack; a control absent there is absent here, not "pending validation". PAR-1 (2026-09-06) ported the 2026-09-05 benefits controls here (capture-all lineage, enforcement perimeter, restore-aware model logging, pinned drafter role, regulated invocation-log store, the output guardrail as IaC with contextual grounding, and the grounded drafter that carries the deterministic assessment INTO its grounding source — the L14 fix the benefits full-portfolio gate forced) — **offline-gated on this pack, live-proven only on benefits** until its REL-5 live re-gate.

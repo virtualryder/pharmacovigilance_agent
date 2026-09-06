@@ -92,8 +92,11 @@ class WorkflowStack(cdk.Stack):
         # R3-2 (both directions): the drafter loads the masked text SERVER-SIDE via the signed ref (no
         # content in the input) AND returns only an opaque narrative_ref (the CIOMS text is stored
         # server-side, never in $.draft). So neither the case nor the drafted narrative enters state.
+        # L14 (PAR-1 port): the grounded drafter states only what is IN its grounding source, so the
+        # deterministic seriousness assessment (structured, non-PHI) travels with the signed ref.
         draft = invoke("DraftNarrative", compute.core,
-                       {"deidentified": True, "sanitized_ref.$": "$.mask.out.sanitized_ref"}, "$.draft")
+                       {"deidentified": True, "sanitized_ref.$": "$.mask.out.sanitized_ref",
+                        "assessment.$": "$.assessment.out"}, "$.draft")
         audit_intent = invoke("AuditIntent", compute.write_audit,
                               {"icsr_id.$": "$.case_id", "action": "icsr-determination",
                                "phase": "INTENT", "actor": "workflow-controller",

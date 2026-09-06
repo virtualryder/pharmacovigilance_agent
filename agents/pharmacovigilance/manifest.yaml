@@ -140,6 +140,7 @@ tools:
           case: { type: string, description: "De-identified case JSON/text (optional when sanitized_ref is given: the drafter loads the masked text server-side)." }
           deidentified: { type: boolean, description: "True if masked by mask_pii." }
           sanitized_ref: { type: object, description: "The signed sanitized_ref returned by mask_pii (proof of de-identification; pass it verbatim)." }
+          assessment: { type: object, description: "The assess_seriousness output, verbatim (deterministic seriousness/reporting category). Under the output guardrail the narrative is grounded on the case plus this assessment." }
         required: [deidentified, sanitized_ref]
       - name: finalize_submission
         description: "Commit/submit an ICSR to the regulator; agent must never call this directly."
@@ -199,7 +200,7 @@ workflow:
     - "openfda_lookup - fetch aggregate FAERS background for the suspect product from the live openFDA API (non-PHI); keep it for reviewer context."
     - "mask_pii - de-identify the case (PHI); use the returned masked_case for assessment, the narrative, and the audit."
     - "assess_seriousness - on the de-identified case with deidentified true, determine ICH E2B(R3) seriousness and the reporting clock (expedited 15-day / periodic / routine)."
-    - "draft_narrative - draft the CIOMS/ICSR narrative, passing the masked case and deidentified true."
+    - "draft_narrative - draft the CIOMS/ICSR narrative, passing deidentified true, the sanitized_ref from mask_pii and the assess_seriousness output as assessment."
     - "write_audit - record an INTENT audit entry for the ICSR."
     - "request_signoff - request qualified-person sign-off to submit (a DIFFERENT qualified person must approve)."
 

@@ -844,3 +844,64 @@ def test_cmk_logs_grant_covers_every_log_group_family():
     for fam in ("log-group:/aws/lambda/pv-ktest-*", "log-group:/aws/states/pv-ktest-*",
                 "log-group:/aws/bedrock/modelinvocations/pv-ktest*", "log-group:/aws/cloudtrail/pv-ktest-*"):
         assert fam in pol, f"CMK logs grant does not cover {fam}"
+
+
+# ── #166 / #190: guardrail as IaC + grounded drafter (PAR-1 step 3 port, 2026-09-06) ──────────
+
+def _compute_with_guardrail():
+    """A compute stack built from the manifest guardrail block (as app.py does), no external id."""
+    import yaml
+    app = aws_cdk.App()
+    asset = stage_lambda_bundle()
+    data = DataStack(app, "dg", prefix="pv-gtest", retention_profile="sandbox-demo", kms_mode="aws-managed")
+    _m = yaml.safe_load((ROOT / "agents" / "pharmacovigilance" / "manifest.yaml").read_text(encoding="utf-8")) or {}
+    gcfg = dict(_m.get("guardrail") or {})
+    gcfg["grounding"] = dict(_m.get("grounding") or {})
+    compute = ComputeStack(app, "cg", prefix="pv-gtest", asset_dir=asset, data=data,
+                           tenant="pv-test-sponsor", guardrail_config=gcfg)
+    return Template.from_stack(compute)
+
+
+def test_guardrail_created_as_iac_with_pinned_version_and_grounding():
+    """The manifest guardrail block becomes a real AWS::Bedrock::Guardrail (PROMPT_ATTACK at the declared
+    strength, PII ANONYMIZE, CONTEXTUAL GROUNDING + RELEVANCE from the manifest thresholds) with a
+    PINNED published version (the drafter never assesses against DRAFT)."""
+    t = _compute_with_guardrail()
+    t.resource_count_is("AWS::Bedrock::Guardrail", 1)
+    t.resource_count_is("AWS::Bedrock::GuardrailVersion", 1)
+    t.has_resource_properties("AWS::Bedrock::Guardrail", Match.object_like({
+        "ContentPolicyConfig": {"FiltersConfig": Match.array_with([
+            Match.object_like({"Type": "PROMPT_ATTACK", "InputStrength": "HIGH"})])},
+        "SensitiveInformationPolicyConfig": {"PiiEntitiesConfig": Match.array_with([
+            Match.object_like({"Type": "US_SOCIAL_SECURITY_NUMBER", "Action": "ANONYMIZE"})])},
+        "ContextualGroundingPolicyConfig": {"FiltersConfig": Match.array_with([
+            Match.object_like({"Type": "GROUNDING", "Threshold": Match.any_value()}),
+            Match.object_like({"Type": "RELEVANCE", "Threshold": Match.any_value()}),
+        ])},
+    }))
+
+
+def test_drafter_gets_guardrail_env_applyguardrail_perm_and_mandatory_guardrail_condition():
+    """The drafter Lambda receives GUARDRAIL_ID/VERSION from the IaC guardrail, an ApplyGuardrail grant,
+    and its bedrock:InvokeModel is DENIED unless the request carries a guardrail (Null present-check on
+    bedrock:GuardrailIdentifier) - a mis-coded drafter cannot make an ungoverned model call."""
+    t = _compute_with_guardrail()
+    t.has_resource_properties("AWS::Lambda::Function", Match.object_like({
+        "Environment": {"Variables": Match.object_like({"GUARDRAIL_ID": Match.any_value(),
+                                                        "GUARDRAIL_VERSION": Match.any_value()})}}))
+    t.has_resource_properties("AWS::IAM::Policy", Match.object_like({
+        "PolicyDocument": {"Statement": Match.array_with([
+            Match.object_like({"Action": "bedrock:ApplyGuardrail"})])}}))
+    tj = json.dumps(t.to_json())
+    assert '"bedrock:GuardrailIdentifier"' in tj and '"bedrock:InvokeModel"' in tj
+    # the runtime execution role carries the same mandatory-guardrail condition (RT-3)
+    assert "BedrockModelInvocationGuardrailRequired" in tj
+
+
+def test_workflow_passes_the_engine_assessment_to_the_grounded_drafter():
+    """L14 (full-portfolio gate 2026-09-06): the grounded drafter can only state what is IN its grounding
+    source, so the workflow's draft state must carry the deterministic assessment output with the signed
+    ref - the production payload, not a proof-shaped one."""
+    wf = json.dumps(T_WORKFLOW.to_json())
+    seg = wf[wf.index("DraftN"): wf.index("DraftN") + 1200]
+    assert "assessment.$" in seg and "$.assessment.out" in seg and "sanitized_ref.$" in seg

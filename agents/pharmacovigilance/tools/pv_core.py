@@ -56,6 +56,39 @@ _SYSTEM = (
     "adverse event(s) with onset and timeline, clinical course, outcome, and seriousness/causality as reported. "
     "(4) Output the narrative text only - no preamble, headings, or JSON."
 )
+# #190 (PAR-1 port, 2026-09-06): with a guardrail bound, the narrative is generated as a GROUNDED restatement
+# of the de-identified case + the deterministic seriousness assessment, tagged guardContent
+# grounding_source + query so the guardrail's CONTEXTUAL GROUNDING filter scores every clinical claim:
+# a faithful narrative passes, an invented/contradictory one is BLOCKED fail-closed.
+_SYSTEM_GROUNDED = _SYSTEM + (
+    " (5) Use ONLY facts present in the provided case and its deterministic seriousness assessment; if a "
+    "detail is not in the case, omit it rather than infer it."
+)
+
+# L14 (benefits full-portfolio gate, 2026-09-06): a grounded drafter may state only what is IN its grounding
+# source, so the deterministic engine's assessment travels into the source from an ALLOWLIST of fields
+# (never caller free text). For a narrative the assessment is optional - the case itself is the source.
+_ASSESSMENT_FIELDS = ("serious", "reporting_category", "clock_days", "criteria_count", "criteria", "assessed_by")
+_DET_OK = re.compile(r"[^a-zA-Z0-9\s:_@$#=/+,\-.%()\[\]']")
+
+
+def _assessment_text(d):
+    if isinstance(d, str):
+        try:
+            d = json.loads(d)
+        except Exception:
+            return _DET_OK.sub("_", d.strip())[:600]
+    if not isinstance(d, dict):
+        return ""
+    parts = []
+    for k in _ASSESSMENT_FIELDS:
+        v = d.get(k)
+        if v is None or v == "" or v == []:
+            continue
+        if isinstance(v, (list, tuple)):
+            v = ", ".join(str(x) for x in v)
+        parts.append("%s=%s" % (k, _DET_OK.sub("_", str(v))[:300]))
+    return "; ".join(parts)
 
 
 def _coerce(event):
@@ -83,10 +116,23 @@ def _draft(e):
     if case is None:
         return {"error": "refused: case content does not match the signed sanitized artifact",
                 "drafted_by": None, "sanitized_ref_verified": True, "content_bound": False}
+    det_text = _assessment_text(e.get("assessment"))
+    source = case + ("\n\nDeterministic seriousness assessment (rules engine, not the model): " + det_text
+                     if det_text else "")
+    if GUARDRAIL_ID:
+        system = [{"text": _SYSTEM_GROUNDED}]
+        content = [
+            {"guardContent": {"text": {"text": source, "qualifiers": ["grounding_source"]}}},
+            {"guardContent": {"text": {"text": "Write the CIOMS-style ICSR clinical narrative of this case, "
+                                               "using only these case facts.", "qualifiers": ["query"]}}},
+        ]
+    else:
+        system = [{"text": _SYSTEM}]
+        content = [{"text": "De-identified case:\n" + source}]
     kwargs = dict(
         modelId=DRAFT_MODEL_ID,
-        system=[{"text": _SYSTEM}],
-        messages=[{"role": "user", "content": [{"text": "De-identified case:\n" + case}]}],
+        system=system,
+        messages=[{"role": "user", "content": content}],
         inferenceConfig={"maxTokens": 900, "temperature": 0.2},
     )
     if GUARDRAIL_ID:
@@ -110,8 +156,12 @@ def _draft(e):
         resp = br.converse(**kwargs)
         metered = budget.commit(tenant, resp.get("usage"), DRAFT_MODEL_ID, reserved=reservation.get("reserved", 0))
         narrative = resp["output"]["message"]["content"][0]["text"].strip()
-        if resp.get("stopReason") == "guardrail_intervened" and not narrative:
-            return {"error": "output guardrail blocked the draft (fail-closed)", "drafted_by": None, "guardrail": "BLOCKED"}
+        if resp.get("stopReason") == "guardrail_intervened":
+            # ANY intervention is fail-closed - including when the guardrail substitutes its configured
+            # blocked message (non-empty text; proven live on benefits 2026-08-29). No narrative_ref is
+            # minted for a blocked draft; the case surfaces to the reviewer as draft-blocked instead.
+            return {"error": "output guardrail blocked the draft (fail-closed)", "drafted_by": None,
+                    "guardrail": "BLOCKED", "guardrail_version": GUARDRAIL_VERSION}
         # R3-2 pass-by-reference for the DRAFT OUTPUT: the CIOMS narrative is drafted from de-identified
         # content, but a redaction gap (e.g. Comprehend not classifying a token) could still leave PHI in
         # the text — so the narrative must NEVER travel in Step Functions state or any telemetry. Store it
