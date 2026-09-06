@@ -593,7 +593,7 @@ def test_runtime_execution_role_is_iac_least_privilege_with_mandatory_guardrail(
     # the drafter carries the same mandatory-guardrail condition
     core = json.dumps([v for v in t.find_resources("AWS::IAM::Policy").values()
                        if "CoreTools" in json.dumps(v["Properties"].get("Roles"))])
-    assert "DrafterBedrockGuardrailRequired" in core and "bedrock:GuardrailIdentifier" in core
+    assert "DrafterBedrockExactGuardrail" in core and "bedrock:GuardrailIdentifier" in core
 
 
 def test_runtime_execution_role_without_guardrail_has_no_guardrail_condition():
@@ -895,7 +895,7 @@ def test_drafter_gets_guardrail_env_applyguardrail_perm_and_mandatory_guardrail_
     tj = json.dumps(t.to_json())
     assert '"bedrock:GuardrailIdentifier"' in tj and '"bedrock:InvokeModel"' in tj
     # the runtime execution role carries the same mandatory-guardrail condition (RT-3)
-    assert "BedrockModelInvocationGuardrailRequired" in tj
+    assert "RuntimeBedrockExactGuardrail" in tj
 
 
 def test_workflow_passes_the_engine_assessment_to_the_grounded_drafter():
@@ -942,3 +942,50 @@ def test_identity_provisions_the_zero_default_entitlement_grant():
     t.has_resource_properties("AWS::Cognito::UserPoolGroup", Match.object_like({"GroupName": "pv_reviewer"}))
     t.has_resource_properties("AWS::Cognito::UserPool", Match.object_like({
         "Schema": Match.array_with([Match.object_like({"Name": "tools", "AttributeDataType": "String", "Mutable": True})])}))
+
+
+# ── PAR-1 step 5 (2026-09-06): authoritative Cedar context (#3) + the perimeter profile ──
+
+def test_authz_store_is_iac_and_only_ingest_writes_it():
+    """#3 / L18: the AUTHORITATIVE consent + authorized-purpose record Cedar's consent/purpose are derived
+    from is a real store (CMK-encrypted, TTL'd); the gateway interceptor may only READ it and ingest - the
+    one door raw content enters, by a verified operator - is the only writer."""
+    T_DATA.has_resource_properties("AWS::DynamoDB::Table", Match.object_like({
+        "TableName": "pv-test-authz-context",
+        "KeySchema": [{"AttributeName": "case_id", "KeyType": "HASH"}],
+        "TimeToLiveSpecification": Match.object_like({"AttributeName": "expires_at", "Enabled": True})}))
+    T_DATA.has_output("AuthzTableName", {})
+    fn = list(T_COMPUTE.find_resources("AWS::Lambda::Function",
+                                       {"Properties": {"FunctionName": "pv-test-ingest-case"}}).values())[0]
+    env = fn["Properties"]["Environment"]["Variables"]
+    assert "AUTHZ_TABLE" in env and env.get("AUTHZ_TABLE_TEMPLATE") == "pv-test-{tenant}-authz-context"
+    pols = T_COMPUTE.find_resources("AWS::IAM::Policy")
+
+    def _stmts(role_ref):
+        return [st for v in pols.values() if any(r.get("Ref") == role_ref for r in v["Properties"].get("Roles", []))
+                for st in v["Properties"]["PolicyDocument"]["Statement"]]
+    authz_writes = [st for st in _stmts(fn["Properties"]["Role"]["Fn::GetAtt"][0])
+                    if "AuthzContext" in json.dumps(st.get("Resource"))
+                    and "dynamodb:PutItem" in json.dumps(st.get("Action"))]
+    assert authz_writes, "ingest must be able to write the authoritative consent/purpose record"
+    ic = list(T_COMPUTE.find_resources("AWS::Lambda::Function",
+                                       {"Properties": {"FunctionName": "pv-test-tenant-interceptor"}}).values())[0]
+    for st in _stmts(ic["Properties"]["Role"]["Fn::GetAtt"][0]):
+        if "AuthzContext" in json.dumps(st.get("Resource")):
+            assert "dynamodb:PutItem" not in json.dumps(st.get("Action")), "the interceptor must never write the record"
+
+
+def test_perimeter_profile_attaches_the_gates_and_declares_their_fields():
+    """The #160/#161 gates attach ONLY with -c perimeter=1, and the gateway then declares the
+    context.input fields they read on every tool schema (optional, so baseline callers are unaffected).
+    Without the flag the proven baseline policy set is byte-for-byte unchanged."""
+    from pv_stacks.gateway_stack import _policies, _PERIMETER_INPUT_FIELDS
+    base = {p["name"] for p in _policies(multitenant=True, perimeter=False)}
+    peri = {p["name"] for p in _policies(multitenant=True, perimeter=True)}
+    added = peri - base
+    assert "require_entitlement" in added and "require_service_window" in added
+    assert any(n.startswith("consent_purpose_before_") for n in added)
+    assert any(n.startswith("budget_before_") for n in added)
+    assert base and not (base - peri), "the baseline set must be unchanged by the perimeter profile"
+    for f in ("consent", "purpose", "budget_ok", "within_service_window", "case_id"):
+        assert f in _PERIMETER_INPUT_FIELDS

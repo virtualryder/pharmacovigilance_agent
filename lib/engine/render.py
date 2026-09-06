@@ -161,14 +161,56 @@ def main():
                     'unless { principal.hasTag("custom:tenant") || (principal.hasTag("cognito:groups") '
                     '&& principal.getTag("cognito:groups") like "*tenant_*") };')
             mode = p.get("validation_mode", "IGNORE_ALL_FINDINGS")
+        elif kind == "forbid" and p.get("require_entitlement"):
+            # ENTITLEMENT (zero-default tools): a principal with NO explicit tool grant may call NOTHING -
+            # being in the role group is not enough. The grant is EITHER a non-empty per-user custom:tools
+            # claim (richest form; injected into the access token by the pre-token-generation trigger from
+            # the user's authoritative entitlement) OR membership in the tools_granted group (the group form,
+            # which rides in cognito:groups - always present in a Cognito access token). Either satisfies the
+            # unless; neither present => zero tools. Defense in depth for the gateway interceptor.
+            stmt = ('forbid(principal, action, resource is AgentCore::Gateway) '
+                    'unless { (principal.hasTag("custom:tools") && principal.getTag("custom:tools") != "") '
+                    '|| (principal.hasTag("cognito:groups") && principal.getTag("cognito:groups") like "*tools_granted*") };')
+            mode = p.get("validation_mode", "IGNORE_ALL_FINDINGS")
+        elif kind == "forbid" and p.get("require_service_window"):
+            # TEMPORAL: no governed DECISION action outside the deployment's service window. SCOPED to the
+            # declared decision actions (manifest `actions:`) - an UNSCOPED context.input access is invalid
+            # on the GA Policy engine because the built-in AgentCore actions (InvokeAgent/InvokeLLM/Mcp/...)
+            # carry no `input`. within_service_window is set by the gateway interceptor from the real request
+            # time (authoritative); it is an OPTIONAL field, so it is presence-guarded (fail-closed).
+            acts = ", ".join('AgentCore::Action::"%s"' % action_id(t) for t in p["actions"])
+            stmt = ('forbid(principal, action in [%s], '
+                    'resource == AgentCore::Gateway::"__GW_ARN__") '
+                    'unless { context.input has within_service_window '
+                    '&& context.input.within_service_window == true };' % acts)
+            mode = p.get("validation_mode", "IGNORE_ALL_FINDINGS")
         elif kind == "forbid":
             aid = action_id(p["action"])
             base = ('forbid(principal, action == AgentCore::Action::"%s", '
                     'resource == AgentCore::Gateway::"__GW_ARN__")' % aid)
+            # Build the `unless` clause from every declared condition (all must hold to permit the call).
+            # These are COARSE gateway gates layered on the authoritative server-side controls (the signed
+            # sanitized_ref, the live budget meter, the recorded consent) - the same defense-in-depth role
+            # the `deidentified` boolean plays; no single one is accepted downstream as proof.
+            # Optional context.input fields are presence-guarded (`context.input has X`) - the GA Policy
+            # engine rejects an unguarded optional-attribute access, and a missing field then fails closed.
+            # `deidentified` is a REQUIRED tool-schema field, so it needs no guard (baseline mask gates).
+            conds = []
             if p.get("unless_deidentified"):
-                stmt = base + " unless { context.input.deidentified == true };"
-            else:
-                stmt = base + ";"
+                conds.append("context.input.deidentified == true")          # data-classification (required field)
+            if p.get("require_consent"):
+                conds.append("context.input has consent && context.input.consent == true")  # consent (optional)
+            if p.get("allowed_purposes"):
+                conds.append("context.input has purpose && (" + " || ".join('context.input.purpose == "%s"' % x
+                             for x in p["allowed_purposes"]) + ")")  # purpose (optional)
+            if p.get("require_budget_ok"):
+                conds.append("context.input has budget_ok && context.input.budget_ok == true")  # budget (optional)
+            if p.get("amount_limit") is not None:
+                af = p.get("amount_field", "amount")
+                # tool-schema `number` -> Cedar DECIMAL: compare via the decimal extension, not Long `<=`.
+                conds.append('context.input has %s && context.input.%s.lessThanOrEqual(decimal("%d.0"))'
+                             % (af, af, int(p["amount_limit"])))  # quantitative (optional)
+            stmt = base + (" unless { " + " && ".join(conds) + " };" if conds else ";")
             mode = p.get("validation_mode", "IGNORE_ALL_FINDINGS")
         else:
             raise SystemExit("unknown policy kind '%s'" % kind)

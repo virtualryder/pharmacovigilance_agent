@@ -190,6 +190,14 @@ policies:
   - { name: no_self_causality_commit,    kind: forbid, action: commit_causality }
   # phase 108 (hybrid multi-tenant): un-tenanted identities are refused at the gateway. Attached ONLY in
   # multi-tenant deployments (scope: multitenant) - silo principals carry no custom:tenant tag.
+  # --- Perimeter profile (PAR-1 step 5, 2026-09-06): the #160/#161 conditions, attached ONLY with
+  # -c perimeter=1 (scope: perimeter). consent / purpose / budget_ok / within_service_window are
+  # AUTHORITATIVE - the gateway interceptor strips caller-supplied copies and injects them from the
+  # server clock, the live meter and the authz store (authoritative_context resolver, #3).
+  - { name: require_entitlement, kind: forbid, require_entitlement: true, scope: perimeter }
+  - { name: require_service_window, kind: forbid, require_service_window: true, scope: perimeter, actions: [assess_seriousness, detect_duplicate, record_causality, draft_narrative] }
+  - { name: consent_purpose_before_assess_seriousness, kind: forbid, action: assess_seriousness, require_consent: true, allowed_purposes: [pharmacovigilance, signal_detection], scope: perimeter }
+  - { name: budget_before_draft_narrative, kind: forbid, action: draft_narrative, require_budget_ok: true, scope: perimeter }
   - { name: require_tenant,              kind: forbid, require_tenant: true, scope: multitenant }
 
 workflow:

@@ -31,3 +31,23 @@ Two rules of the engine make this airtight:
 The demo (`bash lib/engine/demo.sh agents/pharmacovigilance`) proves each of these live in
 ENFORCE mode, and each denial names the exact policy that fired. `bash lib/engine/redteam.sh
 agents/pharmacovigilance` proves they hold even when the agent's reasoning is fully adversarial.
+
+## Perimeter profile (PAR-1 step 5, 2026-09-06) — attached only with `-c perimeter=1`
+
+Ported from the benefits pack so this pack carries the same #160/#161 model. `consent`, `purpose`,
+`budget_ok` and `within_service_window` are **authoritative**: the gateway interceptor strips any
+caller-supplied copy and re-injects them from the server clock, the live per-tenant meter and the
+server-side authz store (`lib/controls/authoritative_context.py`, whose record `ingest_case` writes from
+the verified reviewer's `consent_attested` + `purpose` attestation). A missing value fails the guard, so
+the forbid fires — fail-closed.
+
+| Policy | Condition |
+|---|---|
+| `require_entitlement` | **entitlement** — zero-default tools (#160): no non-empty `custom:tools` claim and no `tools_granted` membership ⇒ zero tools |
+| `require_service_window` | **temporal** — the governed decision actions are refused outside the deployment's service window |
+| `consent_purpose_before_assess_seriousness` | **consent + purpose** — the seriousness assessment that drives expedited reporting needs a recorded consent/lawful basis and an authorized purpose (`pharmacovigilance` / `signal_detection`) |
+| `budget_before_draft_narrative` | **budget** — the model-spending drafter is refused when the live per-tenant meter is at cap |
+
+**Quantitative (#161) is N/A in this pack, and that is deliberate, not missing.** The benefits pack caps a
+money field (`prior_monthly_benefit`) and EDU caps `cost_of_attendance`; no tool in the PV schema takes a
+numeric decision field, so there is nothing to bound. `WOGplatform/docs/PACK-PARITY.md` records the same.

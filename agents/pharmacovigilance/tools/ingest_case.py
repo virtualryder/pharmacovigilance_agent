@@ -5,6 +5,7 @@ encrypted, TTL'd case store and returns an OPAQUE ref — the Step Functions exe
 with {case_id, requester, case_ref, drug, ...} and NO raw content ever enters execution input/output
 (the strict PHI canary's gate). The response echoes only length + ref, never the content."""
 import json
+import time
 
 import case_store
 import tenancy  # noqa: E402  (phase 107: interceptor-injected, HMAC-signed tenant)
@@ -45,6 +46,39 @@ def _coerce(e):
     return e
 
 
+ALLOWED_PURPOSES = ('pharmacovigilance', 'signal_detection')   # the purposes Cedar consent_purpose_before_assess_seriousness admits
+
+
+def _record_authorization(e, tenant):
+    """L18 (benefits full-portfolio gate, 2026-09-06; PAR-1 step 5 port): write the AUTHORITATIVE consent /
+    authorized-purpose record for the case - the record the gateway interceptor's authoritative_context
+    resolver reads for Cedar's consent/purpose (#3). Written ONLY at ingest, by the verified operator's
+    explicit attestation (`consent_attested: true` = the patient/reporter's consent was verified by this operator)
+    with an allowed purpose. Nothing else in the pack can write it, and a later caller-supplied
+    consent/purpose is stripped by the interceptor. Fail-closed: no attestation / unknown purpose / no
+    case_id / no store -> no record -> Cedar denies."""
+    import os
+    case_id = e.get("case_id") or ""
+    purpose = e.get("purpose")
+    attested = e.get("consent_attested") is True
+    if not (case_id and attested and purpose in ALLOWED_PURPOSES):
+        return {"authz_recorded": False,
+                "authz_note": "no consent/purpose record written (needs case_id, consent_attested: true and purpose in %s); "
+                              "Cedar will deny the governed decision for this case" % list(ALLOWED_PURPOSES)}
+    tmpl = os.environ.get("AUTHZ_TABLE_TEMPLATE", "")
+    table = tmpl.format(tenant=tenant) if (tenant and tmpl and "{tenant}" in tmpl) else os.environ.get("AUTHZ_TABLE", "")
+    if not table:
+        return {"authz_recorded": False, "authz_note": "no authz store configured"}
+    item = {"case_id": case_id, "consent": True, "authorized_purpose": purpose,
+            "recorded_at": int(time.time()), "recorded_by": "ingest_case"}
+    try:
+        import boto3
+        boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION", "us-east-1")).Table(table).put_item(Item=item)
+    except Exception as exc:   # never grant on error; the absence of the record is the fail-closed outcome
+        return {"authz_recorded": False, "authz_note": "authz store write failed: %s" % type(exc).__name__}
+    return {"authz_recorded": True, "authz_table": table, "authorized_purpose": purpose}
+
+
 @telemetry.instrument('ingest_case')
 def handler(event, context):
     e = _coerce(event)
@@ -68,4 +102,5 @@ def handler(event, context):
     if binding:
         out["tenant_binding"] = binding
         out["note"] = "start the workflow with {case_id, requester, case_ref, drug, **tenant_binding}"
+    out.update(_record_authorization(e, tenant))   # L18: the authoritative consent/purpose record
     return out

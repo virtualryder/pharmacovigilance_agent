@@ -100,6 +100,20 @@ class DataStack(cdk.Stack):
             removal_policy=cdk.RemovalPolicy.DESTROY,
         )
 
+        # Authoritative authorization-context store (deep-dive #3; PAR-1 step 5 port, 2026-09-06): the
+        # AUTHORITATIVE consent record and the case's AUTHORIZED purpose, keyed by case_id. The gateway
+        # interceptor's resolver reads this (READ-ONLY) to inject Cedar's consent/purpose from a TRUSTED
+        # source instead of trusting a caller-asserted boolean; ingest (the verified operator's
+        # attestation) WRITES it. No record -> Cedar denies (fail-closed). Not evidence: DESTROYed.
+        self.authz_table = ddb.Table(
+            self, "AuthzContext", table_name=_n("authz-context"),
+            partition_key=ddb.Attribute(name="case_id", type=ddb.AttributeType.STRING),
+            billing_mode=ddb.BillingMode.PAY_PER_REQUEST,
+            encryption=enc_ddb, encryption_key=self.cmk,
+            time_to_live_attribute="expires_at",
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+        )
+
         # WORM evidence vault (Object Lock; retention per profile).
         self.worm_bucket = s3.Bucket(
             self, "WormVault",
@@ -119,6 +133,7 @@ class DataStack(cdk.Stack):
         )
 
         # Exact identifiers as outputs (P0-7: consumers use these, never name discovery).
+        cdk.CfnOutput(self, "AuthzTableName", value=self.authz_table.table_name)
         cdk.CfnOutput(self, "AuditTableName", value=self.audit_table.table_name)
         cdk.CfnOutput(self, "AuditTableArn", value=self.audit_table.table_arn)
         cdk.CfnOutput(self, "SanitizedTableName", value=self.sanitized_table.table_name)

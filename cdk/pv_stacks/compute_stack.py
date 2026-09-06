@@ -33,8 +33,12 @@ class ComputeStack(cdk.Stack):
                  provenance_secret: str = "", network=None, tenant: str = "",
                  guardrail_id: str = "", guardrail_version: str = "1", guardrail_config: dict = None,
                  identity=None, approvals_client_id: str = "", multitenant: bool = False,
-                 global_kill_switch: str = "", budget: dict = None, runtime_name: str = "", **kw):
+                 global_kill_switch: str = "", budget: dict = None, runtime_name: str = "",
+                 model_id: str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0", **kw):
         super().__init__(scope, cid, **kw)
+        # R4-3 (fourth review, 2026-09-06): the ONLY model the drafter and the runtime may invoke, from the
+        # manifest `model.draft_model_id` - IAM resources are scoped to it, never `foundation-model/*`.
+        self._model_id = model_id
         # RT-3 (port from benefits, 2026-09-06): the IaC runtime execution role scopes its resources to
         # the runtime name and the deployment's SSM root / kill switch.
         self._runtime_name = runtime_name or "pv_runtime_agent"
@@ -94,6 +98,13 @@ class ComputeStack(cdk.Stack):
             guardrail_id = self.guardrail.attr_guardrail_id
             guardrail_version = ver.attr_version
             self.guardrail_arn = self.guardrail.attr_guardrail_arn
+        # R4-3: the EXACT guardrail the IAM layer admits - `bedrock:GuardrailIdentifier` carries the guardrail
+        # ARN (optionally with `:<version>`), so the allow names both forms and the explicit Deny refuses
+        # every other value INCLUDING an absent one.
+        self.guardrail_ref = []
+        if guardrail_id:
+            g_arn = self.guardrail_arn or f"arn:aws:bedrock:{self.region}:{self.account}:guardrail/{guardrail_id}"
+            self.guardrail_ref = [g_arn, f"{g_arn}:{guardrail_version}"]
             cdk.CfnOutput(self, "GuardrailId", value=guardrail_id)
             cdk.CfnOutput(self, "GuardrailVersionOut", value=guardrail_version, export_name=None)
             cdk.CfnOutput(self, "GuardrailArnOut", value=self.guardrail_arn)
@@ -163,6 +174,15 @@ class ComputeStack(cdk.Stack):
             "SANITIZED_TABLE": data.sanitized_table.table_name,
             "PENDING_TABLE": data.pending_table.table_name,
             "CASE_TABLE": data.case_table.table_name,   # R3-2 pass-by-reference store
+            # deep-dive #3 (PAR-1 step 5): the AUTHORITATIVE consent/authorized-purpose store the
+            # interceptor's resolver reads, so Cedar's consent/purpose come from a trusted record and
+            # never from a caller-asserted boolean. Per-tenant routed via AUTHZ_TABLE_TEMPLATE in MT mode.
+            "AUTHZ_TABLE": data.authz_table.table_name,
+            "AUTHZ_TABLE_TEMPLATE": f"{prefix}-{{tenant}}-authz-context",
+            # TEMPORAL (#161): the interceptor derives within_service_window from the SERVER CLOCK vs
+            # this window (UTC). Default 00:00-24:00 = always in-window; narrow it to enforce.
+            "SERVICE_WINDOW_START": str(self.node.try_get_context("service_window_start") or "0"),
+            "SERVICE_WINDOW_END": str(self.node.try_get_context("service_window_end") or "24"),
         }
         # Gate-B B5: the deployment's pinned tenant (one sponsor per isolated deployment). Tenant identity
         # is DERIVED from this env, never from a request body (lib/controls/tenancy.py).
@@ -231,7 +251,12 @@ class ComputeStack(cdk.Stack):
                        "CLIENT_ID": approvals_client_id or identity.client.user_pool_client_id,
                        "REVIEWER_GROUP": "pv_reviewer"}
                       if (multitenant and identity is not None) else None)
+        # L18: ingest records the verified operator's consent/purpose attestation server-side (the
+        # record the interceptor resolves for Cedar); nothing else in the pack may write it.
+        ingest_env = dict(ingest_env or {}, AUTHZ_TABLE=data.authz_table.table_name,
+                          AUTHZ_TABLE_TEMPLATE=f"{prefix}-{{tenant}}-authz-context")
         self.ingest = fn("ingest-case", "ingest_case", env=ingest_env)   # R3-2: the only door for raw content
+        data.authz_table.grant(self.ingest, "dynamodb:PutItem")   # L18 (silo)
         self.intake = fn("intake-icsr", "intake_icsr")
         self.lookup = fn("openfda-lookup", "openfda_lookup")        # public egress; no API key
         self.mask = fn("mask-pii", "mask_pii")
@@ -317,6 +342,9 @@ class ComputeStack(cdk.Stack):
         data.audit_table.grant(self.tenant_interceptor, "dynamodb:PutItem", "dynamodb:GetItem",
                                "dynamodb:TransactWriteItems")
         data.worm_bucket.grant_put(self.tenant_interceptor)
+        # deep-dive #3: the interceptor's authoritative_context resolver READS the consent/purpose
+        # record (least privilege: GetItem only - it must never be able to write one).
+        data.authz_table.grant(self.tenant_interceptor, "dynamodb:GetItem")
         # Budget meter grants (least privilege): the interceptor only READS the meter (check); the drafter
         # (server-side Bedrock call) READS + UPDATES it (commit) and publishes the Aegis/Budget metrics.
         # The Runtime's exec role is granted the same by lib/runtime/_obs_setup.sh (it is created by the
@@ -384,10 +412,11 @@ class ComputeStack(cdk.Stack):
         # guardrail configured, model invocations are DENIED unless the request carries a guardrail
         # (Null present-check on bedrock:GuardrailIdentifier) - an ungoverned drafter call cannot bypass it.
         _has_guardrail = bool(guardrail_id)
-        self.core.add_to_role_policy(iam.PolicyStatement(
-            sid="DrafterBedrockGuardrailRequired" if _has_guardrail else "DrafterBedrock",
-            actions=["bedrock:InvokeModel"], resources=["*"],
-            conditions=({"Null": {"bedrock:GuardrailIdentifier": "false"}} if _has_guardrail else None)))
+        # R4-3 (fourth review): not "a guardrail is present" (the old Null check let an altered drafter name
+        # a weaker guardrail) but THE guardrail: allow on StringEquals <exact ARN[:version]>, explicit Deny on
+        # anything else, resources scoped to the manifest model.
+        for st in self._bedrock_invoke_statements("Drafter", _has_guardrail):
+            self.core.add_to_role_policy(st)
         self.runtime_role = self._runtime_execution_role(prefix, _has_guardrail, guardrail_id)
         if guardrail_id:
             # Converse with guardrailConfig requires ApplyGuardrail on the specific guardrail.
@@ -477,6 +506,32 @@ class ComputeStack(cdk.Stack):
                           description="The ONLY working approve path: verifies the approver's Cognito "
                                       "access token, enforces SoD, consumes the single-use approval.")
 
+    def _model_resources(self):
+        """R4-3: the model ARNs this pack may invoke - the (cross-region) inference profile in this
+        account/region and the foundation model it routes to - nothing else."""
+        mid = self._model_id
+        fm = mid.split(".", 1)[1] if mid[:3] in ("us.", "eu.", "ap.", "jp.", "au.", "ca.") else mid
+        return [f"arn:aws:bedrock:*::foundation-model/{fm}",
+                f"arn:aws:bedrock:{self.region}:{self.account}:inference-profile/{mid}"]
+
+    def _bedrock_invoke_statements(self, who, has_guardrail):
+        """R4-3 (fourth review, 2026-09-06): model-invocation grant for a governed principal. With a
+        guardrail: ALLOW only with the EXACT guardrail (`StringEquals bedrock:GuardrailIdentifier` = the
+        guardrail ARN or ARN:version) on the scoped model resources, plus an explicit DENY for any other
+        or MISSING guardrail value on every model (StringNotEquals matches an absent key), so an altered
+        drafter/runtime can neither drop the guardrail nor point at a weaker one. Without a guardrail
+        (sandbox): the scoped allow only."""
+        actions = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+        if not has_guardrail:
+            return [iam.PolicyStatement(sid=f"{who}Bedrock", actions=actions, resources=self._model_resources())]
+        return [
+            iam.PolicyStatement(sid=f"{who}BedrockExactGuardrail", actions=actions, resources=self._model_resources(),
+                                conditions={"StringEquals": {"bedrock:GuardrailIdentifier": self.guardrail_ref}}),
+            iam.PolicyStatement(sid=f"{who}DenyOtherOrNoGuardrail", effect=iam.Effect.DENY, actions=actions,
+                                resources=["*"],
+                                conditions={"StringNotEquals": {"bedrock:GuardrailIdentifier": self.guardrail_ref}}),
+        ]
+
     def _runtime_execution_role(self, prefix, has_guardrail, guardrail_id):
         """AgentCore RUNTIME EXECUTION ROLE as IaC (third external review, 2026-09-05). The toolkit's
         `agentcore configure` otherwise auto-creates the role, and AWS states CLI-generated policies are
@@ -514,15 +569,17 @@ class ComputeStack(cdk.Stack):
                                 conditions={"StringEquals": {"cloudwatch:namespace": "bedrock-agentcore"}}),
             iam.PolicyStatement(sid="BudgetMetrics", actions=["cloudwatch:PutMetricData"], resources=["*"],
                                 conditions={"StringEquals": {"cloudwatch:namespace": "Aegis/Budget"}}),
+            # R4-8 (fourth review): the runtime ALWAYS has a verified JWT, so the user-id token path is never a
+            # legitimate need - AWS recommends an explicit Deny on GetWorkloadAccessTokenForUserId and
+            # InvokeAgentRuntimeForUser so identity can only come from the cryptographically verified JWT.
             iam.PolicyStatement(sid="GetAgentAccessToken",
-                                actions=["bedrock-agentcore:GetWorkloadAccessToken", "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
-                                         "bedrock-agentcore:GetWorkloadAccessTokenForUserId"],
+                                actions=["bedrock-agentcore:GetWorkloadAccessToken", "bedrock-agentcore:GetWorkloadAccessTokenForJWT"],
                                 resources=[f"arn:aws:bedrock-agentcore:{region}:{acct}:workload-identity-directory/default",
                                            f"arn:aws:bedrock-agentcore:{region}:{acct}:workload-identity-directory/default/workload-identity/{rt}-*"]),
-            iam.PolicyStatement(sid="BedrockModelInvocationGuardrailRequired" if has_guardrail else "BedrockModelInvocation",
-                                actions=["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
-                                resources=["arn:aws:bedrock:*::foundation-model/*", f"arn:aws:bedrock:{region}:{acct}:*"],
-                                conditions=({"Null": {"bedrock:GuardrailIdentifier": "false"}} if has_guardrail else None)),
+            iam.PolicyStatement(sid="DenyUserIdIdentityPaths", effect=iam.Effect.DENY,
+                                actions=["bedrock-agentcore:GetWorkloadAccessTokenForUserId", "bedrock-agentcore:InvokeAgentRuntimeForUser"],
+                                resources=["*"]),
+            *self._bedrock_invoke_statements("Runtime", has_guardrail),
             iam.PolicyStatement(sid="GovernanceParameters", actions=["ssm:GetParameter"],
                                 resources=[f"arn:aws:ssm:{region}:{acct}:parameter/{prefix}-pharmacovigilance/*"]
                                 + ([f"arn:aws:ssm:{region}:{acct}:parameter{self._global_kill_switch}"] if self._global_kill_switch else [])),

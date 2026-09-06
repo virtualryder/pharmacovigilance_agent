@@ -95,6 +95,13 @@ def guardrail_from_manifest():
     return g
 
 
+def model_id_from_manifest():
+    """R4-3: the manifest `model.draft_model_id` - the single model the drafter and the runtime may invoke."""
+    import yaml
+    m = yaml.safe_load(open(os.path.join(REPO, "agents", "pharmacovigilance", "manifest.yaml"), encoding="utf-8"))
+    return (m.get("model") or {}).get("draft_model_id") or "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+
 def runtime_name_from_manifest():
     """The AgentCore runtime name (manifest `runtime.name`, falling back to the render.py default) - the
     IaC execution role scopes its log-group and workload-identity resources to it (RT-3)."""
@@ -143,6 +150,8 @@ identity = IdentityStack(
         "client_secret_arn": app.node.try_get_context("oidc_client_secret_arn") or "",
     })
 compute = ComputeStack(app, f"{prefix}-compute", prefix=prefix, asset_dir=asset_dir, data=data, runtime_name=runtime_name_from_manifest(),
+                       # R4-3: the only model the drafter + runtime may invoke (IAM scoped to it)
+                       model_id=model_id_from_manifest(),
                        provenance_secret=app.node.try_get_context("provenance_secret") or "",
                        network=network,
                        tenant=app.node.try_get_context("tenant") or "",
@@ -166,8 +175,12 @@ compute = ComputeStack(app, f"{prefix}-compute", prefix=prefix, asset_dir=asset_
                        budget=budget_from_manifest(app))
 workflow = WorkflowStack(app, f"{prefix}-workflow", prefix=prefix, compute=compute, data=data,
                          multitenant=multitenant)
+# -c perimeter=1 attaches the #160/#161 perimeter Cedar gates (entitlement, temporal, consent/purpose,
+# budget, quantitative) and declares the context.input fields they read. Opt-in so the proven baseline
+# policy set is byte-for-byte unchanged (PAR-1 step 5).
+perimeter = str(app.node.try_get_context("perimeter") or "").lower() in ("1", "true", "yes")
 gateway = GatewayStack(app, f"{prefix}-gateway", prefix=prefix, compute=compute, identity=identity,
-                       multitenant=multitenant)
+                       multitenant=multitenant, perimeter=perimeter)
 # Phase 110 (full transparency): -c model_logging=1 turns on Bedrock MODEL INVOCATION LOGGING for the
 # account+region (it is an account-level singleton - it replaces any existing configuration, so it is
 # opt-in) and delivers the gateway's vended request logs; the runtime's spans/logs are AgentCore-managed.

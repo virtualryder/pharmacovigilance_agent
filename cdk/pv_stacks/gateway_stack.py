@@ -22,7 +22,23 @@ from constructs import Construct
 REPO = pathlib.Path(__file__).resolve().parents[2]
 
 
-def _targets_from_manifest(compute):
+# Perimeter profile (-c perimeter=1; PAR-1 step 5 port from benefits, 2026-09-06): the extra
+# context.input fields the #161 Cedar gates read. Declared on EVERY tool schema so the gateway maps them
+# through to Cedar context.input when supplied (the same mechanism the baseline `deidentified` gate
+# uses). Optional (not `required`), so baseline callers that omit them are unaffected.
+_PERIMETER_INPUT_FIELDS = {
+    "consent": {"type": "boolean", "description": "Perimeter gate: recorded patient/reporter consent for this action (coarse gateway gate; the authoritative consent artifact is server-side)."},
+    "purpose": {"type": "string", "description": "Perimeter gate: declared processing purpose (purpose-limitation), e.g. pharmacovigilance / signal_detection."},
+    "budget_ok": {"type": "boolean", "description": "Perimeter gate: the live per-tenant spend meter is under cap (interceptor-injected in production; coarse gateway gate)."},
+    "within_service_window": {"type": "boolean", "description": "Perimeter gate: the request time is inside the deployment service window (interceptor-injected in production; coarse gateway gate)."},
+    # deep-dive #3: the case id the interceptor's authoritative_context resolver uses to look up the
+    # AUTHORITATIVE consent record + the case's authorized purpose (so consent/purpose above are derived
+    # from a trusted record, not the caller).
+    "case_id": {"type": "string", "description": "The case identifier; the gateway interceptor resolves the authoritative consent/purpose for this case from the server-side authz store."},
+}
+
+
+def _targets_from_manifest(compute, perimeter=False):
     """name → (lambda_arn token, MCP tool schemas) straight from the manifest."""
     m = yaml.safe_load((REPO / "agents" / "pharmacovigilance" / "manifest.yaml").read_text(encoding="utf-8"))
     fn_by_target = {
@@ -49,6 +65,9 @@ def _targets_from_manifest(compute):
             # Phase 110: correlation keys (trace/span/session/mcp-session, JSON) the interceptor derives
             # from the request headers; observability only - caller values are overwritten.
             props["__aegis_trace"] = {"type": "string", "description": "Set by the gateway interceptor from the request's trace/session headers (observability correlation); caller-supplied values are overwritten."}
+            if perimeter:
+                for k, v in _PERIMETER_INPUT_FIELDS.items():
+                    props.setdefault(k, v)
             tools.append({"name": tool["name"], "description": tool["description"],
                           "inputSchema": {"type": "object", "properties": props,
                                           "required": tool.get("required", [])}})
@@ -56,14 +75,20 @@ def _targets_from_manifest(compute):
     return out
 
 
-def _policies(multitenant=False):
+def _policies(multitenant=False, perimeter=False):
     """Every shipped .cedar, gateway ARN normalized to the runtime placeholder. Policies marked
     `scope: multitenant` in their header (phase 108 require_tenant) attach ONLY in multi-tenant
     deployments - in silo mode principals carry no tenant tag and they would forbid everything."""
     pols = []
     for p in sorted((REPO / "policies").glob("*.cedar")):
         body = p.read_text(encoding="utf-8")
-        if "scope: multitenant" in body.split("\n", 1)[0] and not multitenant:
+        header = body.split("\n", 1)[0]
+        if "scope: multitenant" in header and not multitenant:
+            continue
+        # Policies marked `scope: perimeter` (the #160/#161 gates: entitlement, temporal, consent/purpose,
+        # budget, quantitative) attach ONLY in the perimeter profile (-c perimeter=1), which also declares
+        # the context.input fields they read; the proven baseline set is byte-for-byte unchanged.
+        if "scope: perimeter" in header and not perimeter:
             continue
         body = re.sub(r'AgentCore::Gateway::"arn:aws:bedrock-agentcore:[^"]+"',
                       'AgentCore::Gateway::"__GATEWAY_ARN__"', body)
@@ -74,15 +99,15 @@ def _policies(multitenant=False):
 
 class GatewayStack(cdk.Stack):
     def __init__(self, scope: Construct, cid: str, *, prefix: str, compute, identity,
-                 multitenant: bool = False, **kw):
+                 multitenant: bool = False, perimeter: bool = False, **kw):
         super().__init__(scope, cid, **kw)
 
         gw_role = iam.Role(self, "GatewayRole",
                            assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
                            description="AgentCore gateway execution role - invoke ONLY the governed tool Lambdas")
-        for t in _targets_from_manifest(compute):
+        for t in _targets_from_manifest(compute, perimeter):
             pass  # arns granted below via explicit list (single evaluation)
-        targets = _targets_from_manifest(compute)
+        targets = _targets_from_manifest(compute, perimeter)
         gw_role.add_to_policy(iam.PolicyStatement(
             actions=["lambda:InvokeFunction"],
             resources=[t["lambda_arn"] for t in targets]
@@ -132,7 +157,7 @@ class GatewayStack(cdk.Stack):
                     "allowedClients": [identity.client.user_pool_client_id]}}),
                 "SsmParam": ssm_param,
                 "TargetsJson": json.dumps(targets, default=str),
-                "PoliciesJson": json.dumps(_policies(multitenant)),
+                "PoliciesJson": json.dumps(_policies(multitenant, perimeter)),
                 "Enforcement": "ENFORCE",
                 # Phase 107: the REQUEST interceptor (passRequestHeaders so it sees the validated JWT)
                 "InterceptorLambdaArn": compute.tenant_interceptor.function_arn,
