@@ -639,3 +639,208 @@ def test_capture_trail_selects_bedrock_and_agentcore_data_events():
     assert props.get("IsMultiRegionTrail") is True and props.get("EnableLogFileValidation") is True
     # live-rejected by CloudTrail (2026-09-05): never let it back in
     assert "AWS::Bedrock::Prompt" not in types
+
+
+# ── 2026-09-05 controls (PAR-1 port from benefits, 2026-09-06) ────────────────────────────────
+
+def _perimeter_stacks(kms="aws-managed", lock_days=0, capture=True):
+    from pv_stacks.observability_stack import ObservabilityStack
+    from pv_stacks.lineage_stack import LineageStack
+    app = aws_cdk.App()
+    asset = stage_lambda_bundle()
+    data = DataStack(app, "dq", prefix="pv-qtest", retention_profile="sandbox-demo", kms_mode=kms)
+    compute = ComputeStack(app, "cq", prefix="pv-qtest", asset_dir=asset, data=data)
+    workflow = WorkflowStack(app, "wq", prefix="pv-qtest", compute=compute, data=data)
+    lineage = LineageStack(app, "lq", prefix="pv-qtest") if capture else None
+    obs = ObservabilityStack(app, "oq", prefix="pv-qtest", compute=compute, workflow=workflow, data=data,
+                             model_logging=True, lineage=lineage, transparency_lock_days=lock_days,
+                             runtime_role_name="AmazonBedrockAgentCoreSDKRuntime-x",
+                             approved_bedrock_principals=("arn:aws:iam::111122223333:role/break-glass",))
+    return data, compute, obs
+
+
+def test_bedrock_perimeter_bypass_alarm_from_capture_trail():
+    """DETECTIVE perimeter: with the capture trail present, two metric filters on its log group feed
+    Aegis/Perimeter BedrockBypassInvocations - (a) assumed-role sessions whose ISSUING ROLE (not the
+    caller-chosen session name) is outside the allowlist, (b) any IAM-user / root caller - and a >=1
+    alarm goes to the ops topic. Without the trail there is nothing to read, so no alarm is claimed."""
+    _, compute, obs = _perimeter_stacks()
+    to = Template.from_stack(obs)
+    filters = to.find_resources("AWS::Logs::MetricFilter")
+    pats = [json.dumps(v["Properties"]["FilterPattern"]) for v in filters.values()]
+    assert len(filters) == 2, f"expected two bypass metric filters, got {len(filters)}"
+    joined = " ".join(pats)
+    assert "bedrock.amazonaws.com" in joined and "InvokeModel" in joined and "RetrieveAndGenerate" in joined
+    assert "sessionIssuer.arn" in joined, "the role filter must key on the issuing ROLE arn, not the session name"
+    assert "userIdentity.arn" not in joined and "principalId" not in joined, "never key on a caller-chosen session name"
+    assert "IAMUser" in joined and "Root" in joined
+    assert "break-glass" in joined and "AmazonBedrockAgentCoreSDKRuntime-x" in joined
+    to.has_resource_properties("AWS::CloudWatch::Alarm", Match.object_like({
+        "AlarmName": "pv-qtest-bedrock-perimeter-bypass", "Namespace": "Aegis/Perimeter/pv-qtest",
+        "MetricName": "BedrockBypassInvocations", "Threshold": 1,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold"}))
+    _, _, obs2 = _perimeter_stacks(capture=False)
+    assert Template.from_stack(obs2).find_resources("AWS::Logs::MetricFilter") == {}
+
+
+def test_model_invocation_logging_is_restore_aware():
+    """Live-found L6 (benefits Tier-1 gate 2026-09-05): model-invocation logging is an ACCOUNT singleton and
+    the old AwsCustomResource simply DELETED it on teardown, switching off the account's pre-existing
+    config. The resource is now a Lambda-backed provider that snapshots the prior config to SSM on create
+    and restores it on delete - it needs Get (snapshot) as well as Put/Delete, the SSM parameter, and
+    PassRole scoped to the bedrock service."""
+    _, _, obs = _perimeter_stacks()
+    t = Template.from_stack(obs)
+    t.resource_count_is("Custom::AegisModelInvocationLogging", 1)
+    crs = t.find_resources("Custom::AegisModelInvocationLogging")
+    props = list(crs.values())[0]["Properties"]
+    assert props["SnapshotParameter"] == "/pv-qtest/model-logging/prior" and "LoggingConfig" in props
+    pols = json.dumps(t.find_resources("AWS::IAM::Policy"))
+    assert "bedrock:GetModelInvocationLoggingConfiguration" in pols and "bedrock:PutModelInvocationLoggingConfiguration" in pols
+    assert "ssm:PutParameter" in pols and "model-logging/prior" in pols
+    assert '"iam:PassedToService": "bedrock.amazonaws.com"' in pols
+    assert "deleteModelInvocationLoggingConfiguration" not in json.dumps(t.to_json())
+
+
+def test_invocation_log_store_is_regulated_data_under_production_settings():
+    """The model-invocation store records EVERY caller's prompts (account setting), so under
+    customer-managed KMS + model_log_lock_days>0 it must be CMK-encrypted (log group AND large-payload
+    bucket, with the bedrock service granted use of the key), Object-Locked in COMPLIANCE mode, versioned,
+    RETAINED and never auto-emptied. The sandbox default keeps the destroy/auto-delete shape."""
+    data, _, obs = _perimeter_stacks(kms="customer-managed", lock_days=400)
+    to, td = Template.from_stack(obs), Template.from_stack(data)
+    to.has_resource_properties("AWS::S3::Bucket", Match.object_like({
+        "ObjectLockEnabled": True,
+        "ObjectLockConfiguration": Match.object_like({"Rule": {"DefaultRetention": {"Mode": "COMPLIANCE", "Days": 400}}}),
+        "VersioningConfiguration": {"Status": "Enabled"},
+        "BucketEncryption": Match.object_like({"ServerSideEncryptionConfiguration": [
+            Match.object_like({"ServerSideEncryptionByDefault": Match.object_like({"SSEAlgorithm": "aws:kms"})})]})}))
+    bucket = [v for v in to.find_resources("AWS::S3::Bucket").values() if v.get("Properties", {}).get("ObjectLockEnabled")][0]
+    assert bucket.get("DeletionPolicy") == "Retain"
+    assert to.find_resources("Custom::S3AutoDeleteObjects") == {}, "a locked regulated-data store must never be auto-emptied"
+    lg = [v for v in to.find_resources("AWS::Logs::LogGroup").values()
+          if "modelinvocations" in json.dumps(v.get("Properties", {}).get("LogGroupName"))][0]
+    assert "KmsKeyId" in lg["Properties"] and lg.get("DeletionPolicy") == "Retain"
+    assert "BedrockInvocationLogDelivery" in json.dumps(td.to_json()), "bedrock service must be granted the CMK for delivery"
+    _, _, obs0 = _perimeter_stacks()
+    t0 = Template.from_stack(obs0)
+    assert t0.find_resources("Custom::S3AutoDeleteObjects") != {}
+    assert not any(v.get("Properties", {}).get("ObjectLockEnabled") for v in t0.find_resources("AWS::S3::Bucket").values())
+
+
+def test_bedrock_runtime_endpoint_policy_admits_only_the_governed_drafter():
+    """NETWORK half of the perimeter inside the pack VPC: the bedrock-runtime interface endpoint carries
+    a policy that allows inference ONLY from the pinned drafter role (+ approved principals), keyed on
+    aws:PrincipalArn (the ROLE arn for sessions) and aws:PrincipalAccount."""
+    from pv_stacks.network_stack import NetworkStack
+    from pv_stacks.compute_stack import drafter_role_name
+    app = aws_cdk.App()
+    net = NetworkStack(app, "np", prefix="pv-ptest", bedrock_principals=("arn:aws:iam::111122223333:role/break-glass",))
+    t = Template.from_stack(net)
+    eps = t.find_resources("AWS::EC2::VPCEndpoint")
+    bedrock = [v for v in eps.values() if "bedrock-runtime" in json.dumps(v["Properties"]["ServiceName"])]
+    assert len(bedrock) == 1
+    pol = json.dumps(bedrock[0]["Properties"]["PolicyDocument"])
+    assert "GovernedDrafterOnly" in pol and "break-glass" in pol
+    assert f":role/{drafter_role_name('pv-ptest')}\"" in pol and "*ServiceRole" not in pol
+    roles = T_COMPUTE.find_resources("AWS::IAM::Role", {"Properties": {"RoleName": drafter_role_name("pv-test")}})
+    assert len(roles) == 1, "the drafter role must carry the pinned physical name"
+    fn = T_COMPUTE.find_resources("AWS::Lambda::Function", {"Properties": {"FunctionName": "pv-test-core-tools"}})
+    assert list(fn.values())[0]["Properties"]["Role"]["Fn::GetAtt"][0] == list(roles)[0]
+    T_COMPUTE.has_output("DrafterRoleArn", {})
+    assert "aws:PrincipalArn" in pol and "aws:PrincipalAccount" in pol
+    assert '"bedrock:InvokeModel"' in pol and '"bedrock:InvokeModelWithResponseStream"' in pol
+    others = [v for v in eps.values() if "bedrock-runtime" not in json.dumps(v["Properties"]["ServiceName"])]
+    assert all("PolicyDocument" not in v["Properties"] for v in others)
+
+
+def test_private_vpc_azs_are_ones_every_endpoint_service_offers():
+    """cognito-idp is offered only in us-east-1b/1c/1d (live-found in the benefits Tier-1 gate), so every
+    subnet must sit in the vetted AZ set, every interface endpoint must span exactly those subnets, and
+    -c vpc_azs overrides."""
+    from pv_stacks.network_stack import NetworkStack
+    t = Template.from_stack(NetworkStack(aws_cdk.App(), "naz0", prefix="pv-az"))
+    azs = {v["Properties"]["AvailabilityZone"] for v in t.find_resources("AWS::EC2::Subnet").values()}
+    assert azs == set(NetworkStack.DEFAULT_AZS), azs
+    assert "us-east-1a" not in azs
+    for v in t.find_resources("AWS::EC2::VPCEndpoint").values():
+        if v["Properties"].get("VpcEndpointType") == "Interface":
+            assert len(v["Properties"]["SubnetIds"]) == len(NetworkStack.DEFAULT_AZS)
+    n2 = Template.from_stack(NetworkStack(aws_cdk.App(), "naz", prefix="pv-az2", azs=("us-east-1c", "us-east-1d")))
+    assert {v["Properties"]["AvailabilityZone"] for v in n2.find_resources("AWS::EC2::Subnet").values()} == {"us-east-1c", "us-east-1d"}
+
+
+# boto3 service name -> VPC endpoint ServiceName suffix. Every service a DEPLOYED Lambda talks to
+# must have an endpoint in the private VPC; anything else hangs until the Lambda timeout.
+_BOTO3_TO_ENDPOINT = {
+    "ssm": "ssm", "cloudwatch": "monitoring", "logs": "logs", "kms": "kms", "sts": "sts",
+    "secretsmanager": "secretsmanager", "stepfunctions": "states", "comprehend": "comprehend",
+    "bedrock-runtime": "bedrock-runtime", "bedrock-agentcore": "bedrock-agentcore",
+    "cognito-idp": "cognito-idp", "s3": "s3", "dynamodb": "dynamodb",
+}
+
+
+def _deployed_handler_modules():
+    """The handler modules ComputeStack actually deploys (the `fn("name", "module")` calls)."""
+    import re
+    src = (ROOT / "cdk" / "pv_stacks" / "compute_stack.py").read_text(encoding="utf-8")
+    return sorted(set(re.findall(r'=\s*fn\(\s*"[^"]+",\s*"([A-Za-z0-9_]+)"', src)))
+
+
+def _bundle_boto3_services(bundle_dir, roots):
+    """boto3 client/resource service names reachable from `roots` through the bundle's own modules
+    (transitive local imports), so an undeployed reference module does not inflate the set."""
+    import ast
+    bundle = pathlib.Path(bundle_dir)
+    local = {p.stem for p in bundle.glob("*.py")}
+    seen, todo, services = set(), list(roots), set()
+    while todo:
+        mod = todo.pop()
+        if mod in seen or mod not in local:
+            continue
+        seen.add(mod)
+        tree = ast.parse((bundle / f"{mod}.py").read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                todo.extend(a.name.split(".")[0] for a in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                todo.append(node.module.split(".")[0])
+            elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                  and node.func.attr in ("client", "resource")
+                  and isinstance(node.func.value, ast.Name) and node.func.value.id == "boto3"
+                  and node.args and isinstance(node.args[0], ast.Constant)):
+                services.add(node.args[0].value)
+    return services
+
+
+def test_private_vpc_has_an_endpoint_for_every_service_the_deployed_lambdas_call():
+    """Live-found L9 (benefits Tier-1 gate attempt 8, 2026-09-06): every governed tool reads the kill switch
+    from SSM first and the budget meter publishes CloudWatch metrics, but the private VPC had no ssm or
+    monitoring endpoint - every tool hung to its timeout and the gateway returned 500s. Derive the required
+    endpoint set from the boto3 clients in the DEPLOYED bundle and assert each one exists."""
+    from pv_stacks.network_stack import NetworkStack
+    services = _bundle_boto3_services(stage_lambda_bundle(), _deployed_handler_modules())
+    assert {"ssm", "cloudwatch", "dynamodb"} <= services, services
+    unknown = services - set(_BOTO3_TO_ENDPOINT)
+    assert not unknown, f"add these boto3 services to _BOTO3_TO_ENDPOINT: {unknown}"
+    present = set()
+    for v in Template.from_stack(NetworkStack(aws_cdk.App(), "nep", prefix="pv-ep")).find_resources("AWS::EC2::VPCEndpoint").values():
+        name = v["Properties"]["ServiceName"]
+        if isinstance(name, dict):
+            name = "".join(x for x in name["Fn::Join"][1] if isinstance(x, str))
+        present.add(name.rsplit(".", 1)[-1])
+    missing = {_BOTO3_TO_ENDPOINT[s] for s in services} - present
+    assert not missing, f"deployed Lambdas call services with no VPC endpoint (would hang in private mode): {missing}"
+
+
+def test_cmk_logs_grant_covers_every_log_group_family():
+    """Live-found (benefits Tier-1 gate, 2026-09-05): the CMK's CloudWatch-Logs grant covered only
+    /aws/lambda/<prefix>-*, so the workflow controller log group (/aws/states/...) was refused the key under
+    kms=customer-managed. Every log-group family the pack encrypts with the CMK must be in the grant."""
+    d = DataStack(aws_cdk.App(), "dk", prefix="pv-ktest", retention_profile="sandbox-demo", kms_mode="customer-managed")
+    keys = Template.from_stack(d).find_resources("AWS::KMS::Key")
+    assert len(keys) == 1
+    pol = json.dumps(next(iter(keys.values()))["Properties"]["KeyPolicy"])
+    for fam in ("log-group:/aws/lambda/pv-ktest-*", "log-group:/aws/states/pv-ktest-*",
+                "log-group:/aws/bedrock/modelinvocations/pv-ktest*", "log-group:/aws/cloudtrail/pv-ktest-*"):
+        assert fam in pol, f"CMK logs grant does not cover {fam}"

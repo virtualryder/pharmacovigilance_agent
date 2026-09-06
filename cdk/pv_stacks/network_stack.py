@@ -4,7 +4,8 @@
 egress through AWS Network Firewall with a DENY-BY-DEFAULT domain allowlist — the only permitted
 external destination is the openFDA drug-event API (api.fda.gov) (the pipeline's single sanctioned external dependency).
 AWS-service traffic never leaves the AWS network: gateway endpoints (S3, DynamoDB) + interface
-endpoints (Secrets Manager, Step Functions, Comprehend, Bedrock runtime, CloudWatch Logs, KMS, STS)
+endpoints (Secrets Manager, Step Functions, Comprehend, Bedrock runtime, CloudWatch Logs, KMS, STS,
+SSM, CloudWatch metrics, Cognito)
 serve it privately, so a compromised tool cannot exfiltrate case data to an arbitrary host.
 
 Topology (per AZ):  app (ISOLATED) --0.0.0.0/0--> firewall endpoint --> firewall subnet --> NAT
@@ -21,15 +22,25 @@ ALLOWED_DOMAINS = [".api.fda.gov"]
 
 
 class NetworkStack(cdk.Stack):
-    def __init__(self, scope: Construct, cid: str, *, prefix: str, **kw):
+    # AZs every interface endpoint this VPC needs is offered in (us-east-1, checked 2026-09-05 with
+    # `aws ec2 describe-vpc-endpoint-services`): cognito-idp is offered ONLY in us-east-1b/1c/1d, while
+    # comprehend / bedrock-runtime / states / secretsmanager / logs / kms / sts / ssm / monitoring are in
+    # every AZ. The benefits pack's earlier pin (1a + 1b) failed its Tier-1 live gate on the cognito-idp
+    # endpoint ("does not support the availability zone of the subnet"). Override per account/region with
+    # -c vpc_azs=<az>,<az>; AZ-name-to-physical mapping differs per account, so re-check the cognito-idp
+    # AZ list when deploying elsewhere. (PAR-1 port from benefits, 2026-09-06.)
+    DEFAULT_AZS = ("us-east-1b", "us-east-1c")
+
+    def __init__(self, scope: Construct, cid: str, *, prefix: str, bedrock_principals=(), azs=(), **kw):
         super().__init__(scope, cid, **kw)
+        self.azs = [a for a in (azs or self.DEFAULT_AZS) if a]
 
         # Live-run find (valb): the per-AZ DescribeFirewall response field is an Fn::GetAtt ATTRIBUTE
         # NAME, so the AZ must be a synth-time LITERAL — an env-agnostic stack's symbolic AZ tokens
         # produce an invalid template. AZs are therefore pinned explicitly (us-east-1 deployment path).
         self.vpc = ec2.Vpc(
             self, "Vpc", vpc_name=f"{prefix}-net",
-            availability_zones=["us-east-1a", "us-east-1b"], nat_gateways=2,
+            availability_zones=list(self.azs), nat_gateways=2,
             subnet_configuration=[
                 ec2.SubnetConfiguration(name="public", subnet_type=ec2.SubnetType.PUBLIC, cidr_mask=24),
                 ec2.SubnetConfiguration(name="firewall", subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS, cidr_mask=28),
@@ -99,14 +110,49 @@ class NetworkStack(cdk.Stack):
         # ── AWS traffic stays on the AWS network ─────────────────────────────
         self.vpc.add_gateway_endpoint("S3Ep", service=ec2.GatewayVpcEndpointAwsService.S3, subnets=[app_sel])
         self.vpc.add_gateway_endpoint("DdbEp", service=ec2.GatewayVpcEndpointAwsService.DYNAMODB, subnets=[app_sel])
+        self.endpoints = {}
         for name, svc in (("SecretsEp", ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER),
                           ("SfnEp", ec2.InterfaceVpcEndpointAwsService.STEP_FUNCTIONS),
                           ("ComprehendEp", ec2.InterfaceVpcEndpointAwsService.COMPREHEND),
                           ("BedrockEp", ec2.InterfaceVpcEndpointAwsService.BEDROCK_RUNTIME),
                           ("LogsEp", ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS),
                           ("KmsEp", ec2.InterfaceVpcEndpointAwsService.KMS),
-                          ("StsEp", ec2.InterfaceVpcEndpointAwsService.STS)):
-            self.vpc.add_interface_endpoint(name, service=svc, subnets=app_sel)
+                          ("StsEp", ec2.InterfaceVpcEndpointAwsService.STS),
+                          # Live-found L9 in the benefits Tier-1 gate (2026-09-06): EVERY governed tool reads
+                          # the kill switch from Parameter Store before doing anything else, and the budget
+                          # meter publishes to CloudWatch metrics. Without ssm + monitoring endpoints every
+                          # tool hangs to its Lambda timeout in private mode and the gateway surfaces a 500.
+                          # tests/test_cdk_stacks.py derives the required endpoint set from the boto3
+                          # clients in the deployed Lambda bundle.
+                          ("SsmEp", ec2.InterfaceVpcEndpointAwsService.SSM),
+                          ("MonitoringEp", ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_MONITORING),
+                          # the approval/requester verifier fetches the Cognito JWKS at cold start; the
+                          # firewall allowlist admits only the sanctioned external API, so the JWKS fetch
+                          # must be served privately. private_dns_enabled makes the public cognito-idp
+                          # hostname resolve to the endpoint inside the VPC.
+                          ("CognitoIdpEp", ec2.InterfaceVpcEndpointAwsService("cognito-idp"))):
+            self.endpoints[name] = self.vpc.add_interface_endpoint(
+                name, service=svc, subnets=app_sel, private_dns_enabled=True)
+
+        # ── Bedrock runtime endpoint POLICY (enforcement-perimeter review, 2026-09-05; PAR-1 port) ──
+        # Network-layer half of the perimeter INSIDE the pack's own VPC: the bedrock-runtime interface
+        # endpoint accepts inference calls ONLY from the governed drafter role (the compute stack's
+        # core-tools Lambda, whose IAM allow additionally requires a guardrail on every call) and any
+        # -c approved_bedrock_principals. Anything else in these subnets that obtains Bedrock
+        # credentials is refused at the endpoint - the in-VPC counterpart of the org SCP under org/.
+        # aws:PrincipalArn resolves to the ROLE arn for a role session, so a caller-chosen session name
+        # cannot satisfy it. Converse / ConverseStream authorize as InvokeModel / ...WithResponseStream.
+        # L12: the EXACT pinned drafter role (see compute_stack.drafter_role_name) - no wildcard, no case guess.
+        from .compute_stack import drafter_role_name
+        drafter_role_pattern = f"arn:aws:iam::{self.account}:role/{drafter_role_name(prefix)}"
+        self.bedrock_endpoint_principals = [drafter_role_pattern] + [p for p in bedrock_principals if p]
+        self.endpoints["BedrockEp"].add_to_policy(iam.PolicyStatement(
+            sid="GovernedDrafterOnly", effect=iam.Effect.ALLOW,
+            principals=[iam.AnyPrincipal()],
+            actions=["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream", "bedrock:ApplyGuardrail"],
+            resources=["*"],
+            conditions={"ArnLike": {"aws:PrincipalArn": self.bedrock_endpoint_principals},
+                        "StringEquals": {"aws:PrincipalAccount": self.account}}))
 
         # ── the governed Lambdas' security group: egress 443 only ────────────
         self.lambda_sg = ec2.SecurityGroup(

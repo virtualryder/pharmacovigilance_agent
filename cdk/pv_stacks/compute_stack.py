@@ -22,6 +22,12 @@ from constructs import Construct
 RUNTIME = lambda_.Runtime.PYTHON_3_12
 
 
+def drafter_role_name(prefix):
+    """The governed drafter's PINNED IAM role name - the single principal every perimeter layer admits
+    (Bedrock VPC-endpoint policy, org SCP/VPCE templates, bypass-alarm allowlist). L12 (PAR-1 port)."""
+    return f"{prefix}-compute-coretools"
+
+
 class ComputeStack(cdk.Stack):
     def __init__(self, scope: Construct, cid: str, *, prefix: str, asset_dir: str, data,
                  provenance_secret: str = "", network=None, tenant: str = "",
@@ -183,6 +189,14 @@ class ComputeStack(cdk.Stack):
         if guardrail_id:
             core_env = {"GUARDRAIL_ID": guardrail_id, "GUARDRAIL_VERSION": guardrail_version}
         self.core = fn("core-tools", "pv_core", env=core_env, timeout=60)  # draft_narrative (Bedrock)
+        # Live-found L12 in the benefits Tier-1 gate (2026-09-06): the Bedrock VPC-endpoint policy and the
+        # org SCP/VPCE templates admit the drafter BY ROLE ARN, but a CDK-generated role name
+        # (<prefix>-compute-CoreToolsServiceRole<hash>-<rand>) is neither predictable nor the case the
+        # pattern guessed (ArnLike is case-sensitive). Pin the physical name so every perimeter layer
+        # can name the EXACT principal - no wildcard, no case guessing. Immutable: changing it replaces
+        # the role (fine for a fresh deploy; a pilot re-deploy is a role replacement, documented).
+        self.core.role.node.default_child.add_property_override("RoleName", drafter_role_name(prefix))
+        self.drafter_role_arn = f"arn:aws:iam::{self.account}:role/{drafter_role_name(prefix)}"
         self.write_audit = fn("write-audit", "write_audit")
         self.request_signoff = fn("request-signoff", "request_signoff")
         self.signoff_register = fn("signoff-register", "signoff_register")
@@ -393,6 +407,7 @@ class ComputeStack(cdk.Stack):
             "RequestSignoffArn": self.request_signoff, "GuardsArn": self.guards,
         }.items():
             cdk.CfnOutput(self, name, value=f.function_arn)   # exact ARNs (P0-7)
+        cdk.CfnOutput(self, "DrafterRoleArn", value=self.drafter_role_arn)   # the perimeter's exact principal (L12)
         cdk.CfnOutput(self, "BudgetsTableName", value=self.budgets_table.table_name,
                       description="Per-tenant meter: <tenant>#<YYYY-MM>; PutItem cap_tokens / cap_usd_micro / behavior to override one tenant")
         cdk.CfnOutput(self, "KillSwitchParameter", value=ks_name)

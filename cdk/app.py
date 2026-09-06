@@ -113,7 +113,11 @@ tenant_data = {t: DataStack(app, f"{prefix}-{t}-data", prefix=prefix, retention_
                for t in tenants}
 network = None
 if (app.node.try_get_context("network_mode") or "public") == "private":
-    network = NetworkStack(app, f"{prefix}-network", prefix=prefix)
+    network = NetworkStack(app, f"{prefix}-network", prefix=prefix,
+                           azs=tuple(a.strip() for a in str(app.node.try_get_context("vpc_azs") or "").split(",") if a.strip()),
+                           bedrock_principals=tuple(
+                               a.strip() for a in str(app.node.try_get_context("approved_bedrock_principals") or "").split(",")
+                               if a.strip()))
 identity = IdentityStack(
     app, f"{prefix}-identity", prefix=prefix,
     identity_mode=app.node.try_get_context("identity_mode") or "sandbox",
@@ -167,7 +171,16 @@ observability = ObservabilityStack(app, f"{prefix}-observability", prefix=prefix
                                    # backstop (-c budget_usd) with an IAM deny action + kill-switch engage
                                    tenants=tuple(tenants) or ("default",),
                                    budget_usd=float(app.node.try_get_context("budget_usd") or 0),
-                                   runtime_role_name=app.node.try_get_context("runtime_role") or "")
+                                   runtime_role_name=app.node.try_get_context("runtime_role") or "",
+                                   # enforcement-perimeter review (2026-09-05; PAR-1 port): detective bypass
+                                   # alarm from the capture trail + a regulated-data invocation-log store
+                                   # (-c model_log_lock_days=N -> Object-Lock COMPLIANCE + RETAIN; CMK under
+                                   # -c kms=customer-managed)
+                                   lineage=lineage,
+                                   transparency_lock_days=int(app.node.try_get_context("model_log_lock_days") or 0),
+                                   approved_bedrock_principals=tuple(
+                                       a.strip() for a in str(app.node.try_get_context("approved_bedrock_principals") or "").split(",")
+                                       if a.strip()))
 
 for s in (data, compute, workflow, identity, observability, gateway) + ((network,) if network else ()) \
         + tuple(tenant_data.values()) + ((lineage,) if lineage else ()):

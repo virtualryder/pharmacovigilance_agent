@@ -49,6 +49,9 @@ COUNT_PATTERNS = [
     # reported clean. A count gate with a hole in it is worse than no gate, because the green
     # result is read as confirmation.
     re.compile(r"\b(\d{2,4})-test\b"),
+    re.compile(r"\*\*(\d{2,4})\*\*\s+offline tests?\b"),
+    re.compile(r"\b(\d{2,4}) collected\b"),
+    re.compile(r"\*\*(\d{2,4})\*\*\s+passing\b"),
     re.compile(r"\b(\d{2,4}) tests?\b"),
 ]
 
@@ -103,7 +106,12 @@ def test_offline_count_in_docs_matches_the_suite():
                 # "at the time of this run" or an inline `<!-- count-gate:historical -->` marker —
                 # so this can never become a blanket excuse for a stale number.
                 context = lines[line - 1] if line - 1 < len(lines) else ""
-                if "at the time of this run" in context or "count-gate:historical" in context:
+                # "at the time of this run" scopes the whole line (it is a past-run record). The inline
+                # marker scopes ONE number: it must sit within 40 chars AFTER that number (ported from the
+                # benefits pack's 2026-09-06 drift audit).
+                if "at the time of this run" in context:
+                    continue
+                if "count-gate:historical" in text[m.end(): m.end() + 40]:
                     continue
                 problems.append(f"{rel}:{line} quotes {n}, suite has {actual}")
     assert not problems, (
@@ -126,8 +134,13 @@ def test_cdk_assertion_count_in_docs_matches_the_cdk_test_module():
         text = p.read_text(encoding="utf-8")
         # "7 CDK stacks" is a stack count, not an assertion count - only judge
         # numbers that are actually describing assertions.
-        for m in re.finditer(r"\b(\d{1,3}) CDK(?! stacks?\b)\b", text):
+        # exclude "7 CDK stacks" (a stack count) but NOT "25 CDK stack-synthesis assertions" (an assertion
+        # count that hid behind the old lookahead because "stack" is followed by "-", a word boundary).
+        for m in re.finditer(r"\b(\d{1,3}) CDK(?! stacks?(?![\w-]))\b", text):
             n = int(m.group(1))
+            # a number-scoped historical marker (the count AT an older tag) is exempt, like the offline count
+            if "count-gate:historical" in text[m.end():m.end() + 40]:
+                continue
             if n != cdk_tests:
                 line = text[: m.start()].count("\n") + 1
                 problems.append(f"{rel}:{line} quotes {n} CDK, module has {cdk_tests}")

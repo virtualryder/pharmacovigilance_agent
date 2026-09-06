@@ -43,8 +43,17 @@ class DataStack(cdk.Stack):
                 actions=["kms:Encrypt*", "kms:Decrypt*", "kms:ReEncrypt*",
                          "kms:GenerateDataKey*", "kms:Describe*"],
                 resources=["*"],
-                conditions={"ArnLike": {"kms:EncryptionContext:aws:logs:arn":
-                                        f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/lambda/{prefix}-*"}}))
+                # LIVE-FOUND in the benefits Tier-1 gate (2026-09-05): scoped to /aws/lambda/<prefix>-* only,
+                # the Step Functions controller log group (/aws/states/...) was refused the key on the first
+                # real customer-managed-KMS deploy of the workflow stack ("KMS key ... not allowed to be used
+                # with ... log-group:/aws/states/..."). Every log-group family the pack creates is listed.
+                conditions={"ArnLike": {"kms:EncryptionContext:aws:logs:arn": [
+                    f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/lambda/{prefix}-*",
+                    f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/states/{prefix}-*",
+                    f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/bedrock/modelinvocations/{prefix}*",
+                    f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/vendedlogs/bedrock-agentcore/gateway/{prefix}*",
+                    f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/cloudtrail/{prefix}-*",
+                ]}}))
             self.cmk.add_to_resource_policy(iam.PolicyStatement(
                 principals=[iam.ServicePrincipal("cloudwatch.amazonaws.com")],
                 actions=["kms:Decrypt", "kms:GenerateDataKey*"],

@@ -78,7 +78,9 @@ def test_workflow_carries_execution_arn_and_gateway_schema_has_trace_field():
     oj = json.dumps(Template.from_stack(obs).to_json())
     # Bedrock model-invocation logging (account-level, opt-in) with a CloudWatch group + S3 large-data
     # bucket + bedrock.amazonaws.com role; gateway vended request logs via CloudWatch Logs delivery
-    assert "putModelInvocationLoggingConfiguration" in oj and "deleteModelInvocationLoggingConfiguration" in oj
+    # L6: the logging custom resource is the restore-aware provider (snapshot -> put; delete -> restore)
+    assert "Custom::AegisModelInvocationLogging" in oj and "model-logging/prior" in oj
+    assert "bedrock:PutModelInvocationLoggingConfiguration" in oj and "bedrock:GetModelInvocationLoggingConfiguration" in oj
     assert "/aws/bedrock/modelinvocations/pv-obs" in oj and "textDataDeliveryEnabled" in oj
     assert '"LogType": "APPLICATION_LOGS"' in oj and "/aws/vendedlogs/bedrock-agentcore/gateway/pv-obs" in oj
     oj2 = json.dumps(Template.from_stack(obs_off).to_json())
