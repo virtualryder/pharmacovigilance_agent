@@ -27,8 +27,13 @@ class ComputeStack(cdk.Stack):
                  provenance_secret: str = "", network=None, tenant: str = "",
                  guardrail_id: str = "", guardrail_version: str = "1",
                  identity=None, approvals_client_id: str = "", multitenant: bool = False,
-                 global_kill_switch: str = "", budget: dict = None, **kw):
+                 global_kill_switch: str = "", budget: dict = None, runtime_name: str = "", **kw):
         super().__init__(scope, cid, **kw)
+        # RT-3 (port from benefits, 2026-09-06): the IaC runtime execution role scopes its resources to
+        # the runtime name and the deployment's SSM root / kill switch.
+        self._runtime_name = runtime_name or "pv_runtime_agent"
+        self._global_kill_switch = global_kill_switch
+        self.guardrail_arn = ""
         code = lambda_.Code.from_asset(asset_dir)
         cmk = None
         if getattr(data, "cmk", None) is not None:
@@ -305,9 +310,15 @@ class ComputeStack(cdk.Stack):
         # sanitized-store readers (content channel)
         for f in (self.core, self.guards, self.assess):
             data.sanitized_table.grant(f, "dynamodb:GetItem")
-        # drafter: Bedrock only
+        # drafter: Bedrock only. MANDATORY-GUARDRAIL IAM CONDITION (external review; RT-3 port): with a
+        # guardrail configured, model invocations are DENIED unless the request carries a guardrail
+        # (Null present-check on bedrock:GuardrailIdentifier) - an ungoverned drafter call cannot bypass it.
+        _has_guardrail = bool(guardrail_id)
         self.core.add_to_role_policy(iam.PolicyStatement(
-            actions=["bedrock:InvokeModel"], resources=["*"]))
+            sid="DrafterBedrockGuardrailRequired" if _has_guardrail else "DrafterBedrock",
+            actions=["bedrock:InvokeModel"], resources=["*"],
+            conditions=({"Null": {"bedrock:GuardrailIdentifier": "false"}} if _has_guardrail else None)))
+        self.runtime_role = self._runtime_execution_role(prefix, _has_guardrail, guardrail_id)
         if guardrail_id:
             # Converse with guardrailConfig requires ApplyGuardrail on the specific guardrail.
             self.core.add_to_role_policy(iam.PolicyStatement(
@@ -394,3 +405,67 @@ class ComputeStack(cdk.Stack):
             cdk.CfnOutput(self, "ApproveSignoffArn", value=self.approve_signoff.function_arn,
                           description="The ONLY working approve path: verifies the approver's Cognito "
                                       "access token, enforces SoD, consumes the single-use approval.")
+
+    def _runtime_execution_role(self, prefix, has_guardrail, guardrail_id):
+        """AgentCore RUNTIME EXECUTION ROLE as IaC (third external review, 2026-09-05). The toolkit's
+        `agentcore configure` otherwise auto-creates the role, and AWS states CLI-generated policies are
+        for development/testing. This role is the documented runtime policy ("IAM Permissions for
+        AgentCore Runtime": ECR pull, runtime log groups, X-Ray, bedrock-agentcore metrics, workload
+        access tokens, model invocation) plus exactly what THIS runtime needs (gateway-URL + kill-switch
+        SSM reads, the budget meter's table + metric namespace, ApplyGuardrail on the platform guardrail),
+        every resource scoped to the deployment. With a guardrail configured, the runtime's model calls
+        carry the same MANDATORY-GUARDRAIL condition as the drafter (agent.py passes guardrailConfig via
+        Strands), so the runtime cannot make an unguarded model call either. Launch with
+        `agentcore configure --execution-role <RuntimeExecutionRoleArn>`; the role name is deterministic so
+        the org SCP allowlist and the bypass alarm can reference it. RT-3 port from benefits (2026-09-06)."""
+        rt, region, acct = self._runtime_name, self.region, self.account
+        role = iam.Role(
+            self, "RuntimeExecutionRole", role_name=f"{prefix}-agentcore-runtime",
+            assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com", conditions={
+                "StringEquals": {"aws:SourceAccount": acct},
+                "ArnLike": {"aws:SourceArn": f"arn:aws:bedrock-agentcore:{region}:{acct}:*"}}),
+            description="Aegis governed AgentCore runtime execution role (IaC, least privilege)")
+        stmts = [
+            iam.PolicyStatement(sid="ECRImageAccess", actions=["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
+                                resources=[f"arn:aws:ecr:{region}:{acct}:repository/*"]),
+            iam.PolicyStatement(sid="ECRTokenAccess", actions=["ecr:GetAuthorizationToken"], resources=["*"]),
+            iam.PolicyStatement(sid="RuntimeLogGroups", actions=["logs:DescribeLogStreams", "logs:CreateLogGroup"],
+                                resources=[f"arn:aws:logs:{region}:{acct}:log-group:/aws/bedrock-agentcore/runtimes/*"]),
+            iam.PolicyStatement(sid="RuntimeLogResourcePolicy", actions=["logs:PutResourcePolicy"],
+                                resources=[f"arn:aws:logs:{region}:{acct}:log-group:/aws/bedrock-agentcore/runtimes/{rt}-*"]),
+            iam.PolicyStatement(sid="DescribeLogGroups", actions=["logs:DescribeLogGroups"],
+                                resources=[f"arn:aws:logs:{region}:{acct}:log-group:*"]),
+            iam.PolicyStatement(sid="RuntimeLogStreams", actions=["logs:CreateLogStream", "logs:PutLogEvents"],
+                                resources=[f"arn:aws:logs:{region}:{acct}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*"]),
+            iam.PolicyStatement(sid="XRay", actions=["xray:PutTraceSegments", "xray:PutTelemetryRecords",
+                                                     "xray:GetSamplingRules", "xray:GetSamplingTargets"], resources=["*"]),
+            iam.PolicyStatement(sid="AgentCoreMetrics", actions=["cloudwatch:PutMetricData"], resources=["*"],
+                                conditions={"StringEquals": {"cloudwatch:namespace": "bedrock-agentcore"}}),
+            iam.PolicyStatement(sid="BudgetMetrics", actions=["cloudwatch:PutMetricData"], resources=["*"],
+                                conditions={"StringEquals": {"cloudwatch:namespace": "Aegis/Budget"}}),
+            iam.PolicyStatement(sid="GetAgentAccessToken",
+                                actions=["bedrock-agentcore:GetWorkloadAccessToken", "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
+                                         "bedrock-agentcore:GetWorkloadAccessTokenForUserId"],
+                                resources=[f"arn:aws:bedrock-agentcore:{region}:{acct}:workload-identity-directory/default",
+                                           f"arn:aws:bedrock-agentcore:{region}:{acct}:workload-identity-directory/default/workload-identity/{rt}-*"]),
+            iam.PolicyStatement(sid="BedrockModelInvocationGuardrailRequired" if has_guardrail else "BedrockModelInvocation",
+                                actions=["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+                                resources=["arn:aws:bedrock:*::foundation-model/*", f"arn:aws:bedrock:{region}:{acct}:*"],
+                                conditions=({"Null": {"bedrock:GuardrailIdentifier": "false"}} if has_guardrail else None)),
+            iam.PolicyStatement(sid="GovernanceParameters", actions=["ssm:GetParameter"],
+                                resources=[f"arn:aws:ssm:{region}:{acct}:parameter/{prefix}-pharmacovigilance/*"]
+                                + ([f"arn:aws:ssm:{region}:{acct}:parameter{self._global_kill_switch}"] if self._global_kill_switch else [])),
+            iam.PolicyStatement(sid="BudgetMeter", actions=["dynamodb:GetItem", "dynamodb:UpdateItem"],
+                                resources=[self.budgets_table.table_arn]),
+        ]
+        if has_guardrail:
+            g_arn = self.guardrail_arn or f"arn:aws:bedrock:{region}:{acct}:guardrail/{guardrail_id}"
+            stmts.append(iam.PolicyStatement(sid="ApplyPlatformGuardrail", actions=["bedrock:ApplyGuardrail"], resources=[g_arn]))
+        for st in stmts:
+            role.add_to_policy(st)
+        cdk.CfnOutput(self, "RuntimeExecutionRoleArn", value=role.role_arn,
+                      description="Pass to `agentcore configure --execution-role` (IaC role; never the CLI-generated one).")
+        cdk.CfnOutput(self, "RuntimeExecutionRoleName", value=role.role_name)
+        return role
+
+

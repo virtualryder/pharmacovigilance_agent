@@ -19,8 +19,13 @@ printf '%s' '{"Version":"2012-10-17","Statement":[
  {"Effect":"Allow","Action":["ssm:GetParameter"],"Resource":"arn:aws:ssm:'"$REGION"':'"$ACC"':parameter'"$SSM_ROOT"'/*"},
  {"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:UpdateItem"],"Resource":"arn:aws:dynamodb:'"$REGION"':'"$ACC"':table/'"$PREFIX"'-budgets"},
  {"Effect":"Allow","Action":["cloudwatch:PutMetricData"],"Resource":"*","Condition":{"StringEquals":{"cloudwatch:namespace":"Aegis/Budget"}}}]}' > ssm-pol.json
+case "$ROLE" in *-agentcore-runtime)
+  # IaC execution role (compute stack RuntimeExecutionRole): SSM / budget / metrics grants are already in
+  # the role's own policy (least privilege, scoped). Never patch an IaC role from a shell.
+  echo "runtime exec role is the IaC role ($ROLE) - no inline policy attach needed"; ROLE="" ;;
+esac
 if [ -n "$ROLE" ] && [ "$ROLE" != "None" ]; then
-  echo "runtime exec role (explicit): $ROLE"
+  echo "runtime exec role (explicit, NON-IaC - development only): $ROLE"
   aws iam put-role-policy --role-name "$ROLE" --policy-name agent-runtime-ssm --policy-document file://ssm-pol.json --region "$REGION" && echo "  attached ssm:GetParameter to $ROLE"
 else
   echo "  RUNTIME_EXEC_ROLE not set — skipping SSM grant (P0-7: exact role required, no name-prefix discovery)."

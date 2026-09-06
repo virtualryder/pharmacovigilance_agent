@@ -21,6 +21,15 @@ if command -v cygpath >/dev/null 2>&1; then MANIFEST="$(cygpath -w "$MANIFEST")"
 BUDGET_CAP_TOKENS="${BUDGET_CAP_TOKENS:-$(python -c "import yaml,sys;print(int((yaml.safe_load(open(sys.argv[1])).get('budget') or {}).get('monthly_token_cap') or 0))" "$MANIFEST")}"
 BUDGET_PRICES_JSON="$(python -c "import json,sys;print(json.dumps(json.load(open(sys.argv[1])),separators=(',',':')))" "$PRICES")"
 echo "budget: table=$PREFIX-budgets cap_tokens=$BUDGET_CAP_TOKENS usd_micro=${BUDGET_CAP_USD_MICRO:-0} behavior=${BUDGET_BEHAVIOR:-hard}"
+# Platform guardrail on the runtime's own model calls (third review; RT-3 port): from the compute stack
+# outputs, so the runtime role's mandatory-guardrail IAM condition is satisfied on every call. Empty = none.
+if [ -z "${GUARDRAIL_ID:-}" ]; then
+  GUARDRAIL_ID="$(aws cloudformation describe-stacks --stack-name "$PREFIX-compute" --query "Stacks[0].Outputs[?OutputKey=='GuardrailId'].OutputValue" --output text 2>/dev/null)"
+  [ "$GUARDRAIL_ID" = "None" ] && GUARDRAIL_ID=""
+fi
+GUARDRAIL_VERSION="${GUARDRAIL_VERSION:-$(aws cloudformation describe-stacks --stack-name "$PREFIX-compute" --query "Stacks[0].Outputs[?OutputKey=='GuardrailVersionOut'].OutputValue" --output text 2>/dev/null)}"
+[ -z "$GUARDRAIL_VERSION" ] || [ "$GUARDRAIL_VERSION" = "None" ] && GUARDRAIL_VERSION="1"
+echo "guardrail: id=${GUARDRAIL_ID:-<none>} version=$GUARDRAIL_VERSION"
 "$AC" launch \
   --env GATEWAY_URL="$GW_URL" \
   --env GATEWAY_SSM_PARAM="$SSM_PARAM" \
@@ -32,6 +41,8 @@ echo "budget: table=$PREFIX-budgets cap_tokens=$BUDGET_CAP_TOKENS usd_micro=${BU
   --env BUDGET_DEPLOYMENT="$PREFIX" \
   --env BUDGET_PRICES_JSON="$BUDGET_PRICES_JSON" \
   --env MODEL_ID="$MODEL" \
+  --env GUARDRAIL_ID="$GUARDRAIL_ID" \
+  --env GUARDRAIL_VERSION="$GUARDRAIL_VERSION" \
   --env SYSTEM_PROMPT="$WORKFLOW_PROMPT" \
   "${MT_ENV[@]}" \
   --auto-update-on-conflict 2>&1

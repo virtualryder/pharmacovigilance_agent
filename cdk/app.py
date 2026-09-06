@@ -83,6 +83,15 @@ def budget_from_manifest(app):
         b["prices_json"] = json.dumps(json.load(fh), separators=(",", ":"))
     return b
 
+def runtime_name_from_manifest():
+    """The AgentCore runtime name (manifest `runtime.name`, falling back to the render.py default) - the
+    IaC execution role scopes its log-group and workload-identity resources to it (RT-3)."""
+    import yaml
+    m = yaml.safe_load(open(os.path.join(REPO, "agents", "pharmacovigilance", "manifest.yaml"), encoding="utf-8"))
+    return ((m.get("runtime") or {}).get("name")
+            or (m.get("agent", {}).get("slug", "agent").replace("-", "_") + "_agent"))
+
+
 
 app = cdk.App()
 env_name = app.node.try_get_context("env") or "dev"
@@ -113,7 +122,7 @@ identity = IdentityStack(
         "client_id": app.node.try_get_context("oidc_client_id") or "",
         "client_secret_arn": app.node.try_get_context("oidc_client_secret_arn") or "",
     })
-compute = ComputeStack(app, f"{prefix}-compute", prefix=prefix, asset_dir=asset_dir, data=data,
+compute = ComputeStack(app, f"{prefix}-compute", prefix=prefix, asset_dir=asset_dir, data=data, runtime_name=runtime_name_from_manifest(),
                        provenance_secret=app.node.try_get_context("provenance_secret") or "",
                        network=network,
                        tenant=app.node.try_get_context("tenant") or "",

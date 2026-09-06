@@ -25,6 +25,43 @@ log = logging.getLogger("agent")
 app = BedrockAgentCoreApp()
 
 MODEL_ID = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+
+# Guardrail on the RUNTIME's own model calls (third review, 2026-09-05): the drafter already carries the
+# platform guardrail; the runtime's Strands model did not, so the mandatory-guardrail IAM condition
+# could not be applied to the runtime role. Set from the compute stack's outputs at launch (_launch.sh).
+GUARDRAIL_ID = os.environ.get("GUARDRAIL_ID", "").strip()
+GUARDRAIL_VERSION = os.environ.get("GUARDRAIL_VERSION", "1").strip() or "1"
+
+# INPUT CONTRACT (third review, 2026-09-05 - AWS: structured input to an entrypoint can cause direct tool
+# dispatch; CLI-generated roles are for development). The invocation payload is untrusted: `prompt`,
+# `case_id`, `requester` must be plain strings within bounds, or the invocation is refused BEFORE the
+# kill-switch read, the tenant derivation, the gateway and the model. A list/dict prompt (Strands accepts
+# content blocks, i.e. tool-use/tool-result shapes) is refused outright.
+PROMPT_MAX_CHARS = int(os.environ.get("PROMPT_MAX_CHARS", "4000"))
+_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,127}$")
+
+
+def validate_input(p):
+    """Return (prompt, case_id, requester) or raise ValueError(reason). Pure; no I/O."""
+    if not isinstance(p, dict):
+        raise ValueError("payload must be a JSON object")
+    prompt = p.get("prompt")
+    if prompt is not None and not isinstance(prompt, str):
+        raise ValueError("prompt must be a string (structured content is not accepted)")
+    if isinstance(prompt, str):
+        prompt = prompt.strip()
+        if not prompt:
+            raise ValueError("prompt must not be empty")
+        if len(prompt) > PROMPT_MAX_CHARS:
+            raise ValueError("prompt exceeds %d characters" % PROMPT_MAX_CHARS)
+        if "\x00" in prompt:
+            raise ValueError("prompt contains a NUL byte")
+    case_id = p.get("case_id") or p.get("icsr_id") or "CASE-0001"
+    requester = p.get("requester", "reviewer")
+    for name, val in (("case_id", case_id), ("requester", requester)):
+        if not isinstance(val, str) or not _ID_RE.match(val):
+            raise ValueError("%s must be a short identifier (letters, digits, . _ : @ + -)" % name)
+    return prompt, case_id, requester
 REGION = os.environ.get("AWS_REGION", "us-east-1")
 GATEWAY_URL_ENV = os.environ.get("GATEWAY_URL", "")
 GATEWAY_SSM_PARAM = os.environ.get("GATEWAY_SSM_PARAM", "")
@@ -260,10 +297,15 @@ def _bedrock_session(corr):
 @app.entrypoint
 def invoke(payload, context=None):
     p = payload or {}
+    try:
+        prompt, case_id, requester = validate_input(p)
+    except ValueError as exc:
+        log.warning("invocation REFUSED (input contract): %s", exc)
+        return {"error": "invalid input: %s" % exc, "governed": True, "rejected": "input"}
     token = p.get("access_token") or ""
-    requester = p.get("requester", "reviewer")
-    case_id = p.get("case_id") or p.get("icsr_id") or "CASE-0001"
-    prompt = p.get("prompt") or (
+    if not isinstance(token, str):
+        return {"error": "invalid input: access_token must be a string", "governed": True, "rejected": "input"}
+    prompt = prompt or (
         "Process the intake for case %s (requester %s). Run the governed workflow end to end and "
         "request human sign-off with the case id and requester." % (case_id, requester)
     )
@@ -300,7 +342,12 @@ def invoke(payload, context=None):
     # region comes from the session (Strands refuses region_name + boto_session together - found live).
     # streaming=False: Strands then calls Converse (not ConverseStream), whose parsed response carries
     # `usage`, which the budget meter commits per call (the runtime never streams to its caller anyway).
-    model = BedrockModel(model_id=MODEL_ID, temperature=0.2, boto_session=_bedrock_session(corr), streaming=False)
+    model_kw = dict(model_id=MODEL_ID, temperature=0.2, boto_session=_bedrock_session(corr), streaming=False)
+    if GUARDRAIL_ID:
+        # every runtime model call is guardrail-assessed (Strands passes guardrailConfig on Converse), so
+        # the runtime role can carry the same Null{bedrock:GuardrailIdentifier:false} condition as the drafter
+        model_kw.update(guardrail_id=GUARDRAIL_ID, guardrail_version=GUARDRAIL_VERSION, guardrail_trace="enabled")
+    model = BedrockModel(**model_kw)
     mcp_client = MCPClient(lambda: streamablehttp_client(gw, headers={"Authorization": "Bearer %s" % token}))
     with mcp_client:
         tools = mcp_client.list_tools_sync()
