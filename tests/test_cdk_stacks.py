@@ -905,3 +905,40 @@ def test_workflow_passes_the_engine_assessment_to_the_grounded_drafter():
     wf = json.dumps(T_WORKFLOW.to_json())
     seg = wf[wf.index("DraftN"): wf.index("DraftN") + 1200]
     assert "assessment.$" in seg and "$.assessment.out" in seg and "sanitized_ref.$" in seg
+
+
+# ── #170 WAF on the auth front door + #160 entitlement grant as IaC (PAR-1 step 4 port, 2026-09-06) ──
+
+def test_waf_off_by_default():
+    """No Web ACL unless -c waf=1 (baseline identity is unchanged)."""
+    t = Template.from_stack(IdentityStack(aws_cdk.App(), "i0", prefix="pv-wtest"))
+    t.resource_count_is("AWS::WAFv2::WebACL", 0)
+
+
+def test_waf_web_acl_created_for_pool():
+    """`-c waf=1` creates a REGIONAL Web ACL (managed common rules + per-IP rate limit) for the auth
+    surface. Association to the pool is applied post-deploy with retry (WAF<->Cognito association is
+    eventually consistent and the native CFN association resource hangs for Cognito targets)."""
+    t = Template.from_stack(IdentityStack(aws_cdk.App(), "iw", prefix="pv-wtest", waf=True))
+    t.resource_count_is("AWS::WAFv2::WebACL", 1)
+    t.has_resource_properties("AWS::WAFv2::WebACL", Match.object_like({
+        "Scope": "REGIONAL",
+        "DefaultAction": {"Allow": {}},
+        "Rules": Match.array_with([
+            Match.object_like({"Statement": {"ManagedRuleGroupStatement": Match.object_like(
+                {"VendorName": "AWS", "Name": "AWSManagedRulesCommonRuleSet"})}}),
+            Match.object_like({"Action": {"Block": {}},
+                               "Statement": {"RateBasedStatement": Match.object_like({"AggregateKeyType": "IP"})}}),
+        ])}))
+    t.has_output("WafAssociateTarget", {})
+
+
+def test_identity_provisions_the_zero_default_entitlement_grant():
+    """#160 / L11: the zero-default entitlement admits only a non-empty custom:tools claim or membership in
+    tools_granted - BOTH must be IaC (the pool attribute and the group), or every operator is denied every
+    tool on a fresh deployment (found live on benefits, Tier-1 gate attempt 9)."""
+    t = T_IDENTITY
+    t.has_resource_properties("AWS::Cognito::UserPoolGroup", Match.object_like({"GroupName": "tools_granted"}))
+    t.has_resource_properties("AWS::Cognito::UserPoolGroup", Match.object_like({"GroupName": "pv_reviewer"}))
+    t.has_resource_properties("AWS::Cognito::UserPool", Match.object_like({
+        "Schema": Match.array_with([Match.object_like({"Name": "tools", "AttributeDataType": "String", "Mutable": True})])}))

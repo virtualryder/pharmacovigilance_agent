@@ -11,14 +11,14 @@ ENFORCED, and an enterprise OIDC IdP can be attached AS IaC (issuer/client id vi
 secret via a Secrets Manager dynamic reference — never plaintext in the template). Federated users
 land in the SAME pool and hit the SAME deny-by-default Cedar policies as native operators."""
 import aws_cdk as cdk
-from aws_cdk import aws_cognito as cognito
+from aws_cdk import aws_cognito as cognito, aws_wafv2 as wafv2
 from constructs import Construct
 
 
 class IdentityStack(cdk.Stack):
     def __init__(self, scope: Construct, cid: str, *, prefix: str,
                  identity_mode: str = "sandbox", federation: dict | None = None,
-                 tenants: tuple = (), **kw):
+                 tenants: tuple = (), waf: bool = False, **kw):
         super().__init__(scope, cid, **kw)
         if identity_mode not in ("sandbox", "pilot"):
             raise ValueError(f"unknown identity_mode {identity_mode!r}; choose sandbox or pilot")
@@ -45,6 +45,10 @@ class IdentityStack(cdk.Stack):
             password_policy=cognito.PasswordPolicy(
                 min_length=14, require_lowercase=True, require_uppercase=True,
                 require_digits=True, require_symbols=True),
+            # ENTITLEMENT (#160, zero-default tools; L11): Cedar require_entitlement admits only a non-empty
+            # custom:tools claim or the tools_granted group. The per-user claim attribute is provisioned
+            # here (a pre-token-generation trigger copies it into the access token) and the group below.
+            custom_attributes={"tools": cognito.StringAttribute(min_len=0, max_len=2048, mutable=True)},
             removal_policy=cdk.RemovalPolicy.RETAIN,
         )
 
@@ -93,6 +97,58 @@ class IdentityStack(cdk.Stack):
         cognito.CfnUserPoolGroup(self, "ReviewerGroup", user_pool_id=self.pool.user_pool_id,
                                  group_name="pv_reviewer",
                                  description="Qualified pharmacovigilance reviewers (Cedar role group)")
+        # ENTITLEMENT (#160, zero-default tools; L11 live-found on benefits 2026-09-06): the explicit grant.
+        # An operator in the role group but NOT in this group (and without a custom:tools claim) is denied
+        # every tool by Cedar require_entitlement - so the grant must be IaC, never hand-created by a proof.
+        cognito.CfnUserPoolGroup(self, "EntitlementGroup", user_pool_id=self.pool.user_pool_id,
+                                 group_name="tools_granted",
+                                 description="Explicit tool entitlement grant (zero-default #160)")
+
+        # ── #170: WAFv2 on the auth front door (PAR-1 port from benefits, 2026-09-06) ─────────
+        # The AgentCore Gateway and Runtime are MANAGED endpoints and are NOT WAF-associable resource
+        # types (WAFv2 associates only with ALB / API Gateway / CloudFront / AppSync / Cognito user pool
+        # / App Runner). The Cognito user pool IS the token-issuance surface for the whole runtime path,
+        # and it IS associable - so the perimeter WAF sits here (`-c waf=1`): a REGIONAL Web ACL with the
+        # AWS managed Common Rule Set + a per-IP rate limit, default-allow. (No ATP managed rule set and
+        # no CAPTCHA action: Cognito forbids ATP on a pool and CAPTCHA can break managed-login TOTP.)
+        self.web_acl = None
+        self.web_acl_arn = ""
+        if waf:
+            self.web_acl = wafv2.CfnWebACL(
+                self, "AuthWebAcl",
+                name=f"{prefix}-auth-waf", scope="REGIONAL",
+                default_action=wafv2.CfnWebACL.DefaultActionProperty(allow={}),
+                visibility_config=wafv2.CfnWebACL.VisibilityConfigProperty(
+                    sampled_requests_enabled=True, cloud_watch_metrics_enabled=True,
+                    metric_name=f"{prefix}-auth-waf"),
+                rules=[
+                    wafv2.CfnWebACL.RuleProperty(
+                        name="CommonRuleSet", priority=1,
+                        override_action=wafv2.CfnWebACL.OverrideActionProperty(none={}),
+                        statement=wafv2.CfnWebACL.StatementProperty(
+                            managed_rule_group_statement=wafv2.CfnWebACL.ManagedRuleGroupStatementProperty(
+                                vendor_name="AWS", name="AWSManagedRulesCommonRuleSet")),
+                        visibility_config=wafv2.CfnWebACL.VisibilityConfigProperty(
+                            sampled_requests_enabled=True, cloud_watch_metrics_enabled=True,
+                            metric_name=f"{prefix}-waf-common")),
+                    wafv2.CfnWebACL.RuleProperty(
+                        name="RateLimitPerIp", priority=2,
+                        action=wafv2.CfnWebACL.RuleActionProperty(block={}),
+                        statement=wafv2.CfnWebACL.StatementProperty(
+                            rate_based_statement=wafv2.CfnWebACL.RateBasedStatementProperty(
+                                limit=2000, aggregate_key_type="IP")),
+                        visibility_config=wafv2.CfnWebACL.VisibilityConfigProperty(
+                            sampled_requests_enabled=True, cloud_watch_metrics_enabled=True,
+                            metric_name=f"{prefix}-waf-ratelimit")),
+                ])
+            self.web_acl_arn = self.web_acl.attr_arn
+            pool_arn = f"arn:aws:cognito-idp:{self.region}:{self.account}:userpool/{self.pool.user_pool_id}"
+            # ASSOCIATION is applied post-deploy WITH RETRY (benefits' scripts/network_waf_proof.py), not as
+            # a CFN resource: the native AWS::WAFv2::WebACLAssociation hangs for a COGNITO target and an
+            # immediate AssociateWebACL fails "couldn't retrieve the resource" (eventually consistent).
+            cdk.CfnOutput(self, "WebAclArn", value=self.web_acl.attr_arn)
+            cdk.CfnOutput(self, "WafAssociateTarget", value=pool_arn)
+
         cdk.CfnOutput(self, "UserPoolId", value=self.pool.user_pool_id)
         cdk.CfnOutput(self, "ClientId", value=self.client.user_pool_client_id)
         cdk.CfnOutput(self, "IdentityMode", value=identity_mode)

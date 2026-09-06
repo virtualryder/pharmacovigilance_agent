@@ -112,3 +112,60 @@ def test_runtime_model_guardrail_wiring(monkeypatch):
     monkeypatch.setattr(agent, "GUARDRAIL_ID", "")
     agent.invoke({"access_token": "t", "prompt": "hi", "case_id": "C-1"})
     assert "guardrail_id" not in seen
+
+
+def test_mid_session_budget_stop_survives_mcp_teardown_error(monkeypatch):
+    """L19 (benefits full-portfolio gate attempt 4, 2026-09-06; the EDU runtime had carried the teardown
+    guard since its 2026-09-04 gate, benefits had not): a mid-session BUDGET stop computed inside the
+    session must reach the caller as the governed refusal even when the MCP client's teardown raises
+    ("Connection to the MCP server was closed"), and an ExceptionGroup wrapping the stop is walked."""
+    class _Model:
+        def __init__(self, **kw):
+            pass
+
+    monkeypatch.setattr(agent, "BedrockModel", _Model)
+    monkeypatch.setattr(agent, "_kill_switch", lambda: None)
+    monkeypatch.setattr(agent, "_session_tenant", lambda t: "pha-a")
+    monkeypatch.setattr(agent, "_gateway_url", lambda: "https://gw.example")
+    monkeypatch.setattr(agent, "_bedrock_session", lambda corr: None)
+    monkeypatch.setattr(agent, "_budget", None)
+    decision = {"tenant": "pha-a", "reason": "cap reached", "cap_tokens": 10}
+
+    class _Agent:
+        def __init__(self, **kw):
+            pass
+
+        def __call__(self, prompt):
+            raise ExceptionGroup("event loop", [RuntimeError("cycle failed"), agent.BudgetExceeded(decision)])
+
+    class _Mcp:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            raise RuntimeError("Connection to the MCP server was closed")
+
+        def list_tools_sync(self):
+            return ["mask_pii"]
+
+        def call_tool_sync(self, *a, **k):
+            return {}
+
+    monkeypatch.setattr(agent, "MCPClient", _Mcp)
+    monkeypatch.setattr(agent, "Agent", _Agent)
+    monkeypatch.setattr(agent, "GUARDRAIL_ID", "")
+    out = agent.invoke({"access_token": "t", "prompt": "hi", "case_id": "C-1"})
+    assert out.get("stopped") == "mid-session" and out.get("guardrail_action") == "BUDGET" and out.get("refused") is True
+    assert out.get("tenant") == "pha-a"
+
+    class _McpBoom(_Mcp):
+        def list_tools_sync(self):
+            raise RuntimeError("gateway unreachable")
+
+    monkeypatch.setattr(agent, "MCPClient", _McpBoom)
+    import pytest
+    with pytest.raises(RuntimeError):
+        agent.invoke({"access_token": "t", "prompt": "hi", "case_id": "C-1"})

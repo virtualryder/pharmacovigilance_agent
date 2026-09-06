@@ -132,12 +132,21 @@ def _kill_switch(now=None):
 
 
 def _find(exc, cls):
-    seen, e = set(), exc
-    while e is not None and id(e) not in seen:
+    """The first `cls` in the cause/context chain of `exc` - INCLUDING the members of an ExceptionGroup
+    (L19, 2026-09-06: the MCP client's anyio task group re-raises a mid-session stop as an
+    ExceptionGroup, whose members are not on __cause__/__context__)."""
+    seen, todo = set(), [exc]
+    while todo:
+        e = todo.pop()
+        if e is None or id(e) in seen:
+            continue
+        seen.add(id(e))
         if isinstance(e, cls):
             return e
-        seen.add(id(e))
-        e = e.__cause__ or e.__context__
+        members = getattr(e, "exceptions", None)
+        if isinstance(members, (list, tuple)):
+            todo.extend(members)
+        todo.append(e.__cause__ or e.__context__)
     return None
 
 
@@ -349,37 +358,63 @@ def invoke(payload, context=None):
         model_kw.update(guardrail_id=GUARDRAIL_ID, guardrail_version=GUARDRAIL_VERSION, guardrail_trace="enabled")
     model = BedrockModel(**model_kw)
     mcp_client = MCPClient(lambda: streamablehttp_client(gw, headers={"Authorization": "Bearer %s" % token}))
-    with mcp_client:
-        tools = mcp_client.list_tools_sync()
-        names = [getattr(t, "tool_name", str(t)) for t in tools]
-        log.info("authorized_tools requester=%s count=%d names=%s", requester, len(names), names)
-        if not tools:
-            log.warning("ACCESS DENIED requester=%s (no authorized tools)", requester)
-            return {
-                "result": "ACCESS DENIED - your identity is not authorized for any governed tool at the "
-                          "gateway (Cedar deny-by-default). No workflow was run and nothing was drafted, "
-                          "masked, audited, or submitted.",
-                "tools_available": [], "governed": True, "tenant": session_tenant,
-            }
-        # trace_attributes land on EVERY Strands span of this invocation (invoke_agent, cycles, model
-        # invoke, execute_tool): session.id (mandatory for AgentCore observability) + tenant + case.
-        agent = Agent(model=model, tools=tools, system_prompt=SYSTEM, trace_attributes=corr)
-        try:
-            result = agent(prompt)
-        except Exception as exc:              # stopped mid-session: report, never retry
-            # Strands wraps a hook exception in strands.types.exceptions.EventLoopException (seen live
-            # 2026-09-03: "Invocation failed ... exception.type EventLoopException, message = our reason"),
-            # so walk the cause chain and ALSO re-read the switch: either one proves containment.
+    # L19 (full-portfolio gate attempt 4, 2026-09-06): the mid-session BUDGET stop was computed correctly
+    # inside the session, but leaving the `with mcp_client` block re-raised the MCP client's own teardown
+    # error ("Connection to the MCP server was closed" - the gateway had refused the in-flight tool call
+    # under the same cap) and the caller saw HTTP 424 instead of the governed refusal. The session body
+    # now records its outcome first; a teardown error after an outcome is logged, never surfaced.
+    outcome = {}
+    try:
+        with mcp_client:
+            outcome["payload"] = _session(mcp_client, model, prompt, corr, requester, session_tenant)
+    except Exception as exc:
+        if "payload" in outcome:
+            log.warning("MCP client teardown raised AFTER the invocation completed (ignored): %s: %s",
+                        type(exc).__name__, str(exc)[:200])
+        else:
             b = _budget_stopped(exc)
             if b is not None:
-                return {**_budget_refusal(b.decision, corr), "tools_available": names, "tenant": session_tenant,
-                        "stopped": "mid-session"}
+                return {**_budget_refusal(b.decision, corr), "tenant": session_tenant, "stopped": "mid-session"}
             if _contained(exc):
                 engaged = _kill_switch() or {"reason": str(exc), "source": ",".join(KILL_SWITCH_PARAMS)}
-                return {**_refusal(engaged, corr), "tools_available": names, "tenant": session_tenant,
-                        "stopped": "mid-session"}
+                return {**_refusal(engaged, corr), "tenant": session_tenant, "stopped": "mid-session"}
             raise
-    log.info("invocation_complete requester=%s case_id=%s result_chars=%d", requester, case_id, len(str(result)))
+    return outcome["payload"]
+
+
+def _session(mcp_client, model, prompt, corr, requester, session_tenant):
+    """One governed agent session on an OPEN MCP client; returns the caller-facing payload (L19: never a
+    bare exception once an outcome exists)."""
+    tools = mcp_client.list_tools_sync()
+    names = [getattr(t, "tool_name", str(t)) for t in tools]
+    log.info("authorized_tools requester=%s count=%d names=%s", requester, len(names), names)
+    if not tools:
+        log.warning("ACCESS DENIED requester=%s (no authorized tools)", requester)
+        return {
+            "result": "ACCESS DENIED - your identity is not authorized for any governed tool at the "
+                      "gateway (Cedar deny-by-default). No workflow was run and nothing was drafted, "
+                      "masked, audited, or submitted.",
+            "tools_available": [], "governed": True, "tenant": session_tenant,
+        }
+    # trace_attributes land on EVERY Strands span of this invocation (invoke_agent, cycles, model
+    # invoke, execute_tool): session.id (mandatory for AgentCore observability) + tenant + case.
+    agent = Agent(model=model, tools=tools, system_prompt=SYSTEM, trace_attributes=corr)
+    try:
+        result = agent(prompt)
+    except Exception as exc:              # stopped mid-session: report, never retry
+        # Strands wraps a hook exception in strands.types.exceptions.EventLoopException (seen live
+        # 2026-09-03: "Invocation failed ... exception.type EventLoopException, message = our reason"),
+        # so walk the cause chain and ALSO re-read the switch: either one proves containment.
+        b = _budget_stopped(exc)
+        if b is not None:
+            return {**_budget_refusal(b.decision, corr), "tools_available": names, "tenant": session_tenant,
+                    "stopped": "mid-session"}
+        if _contained(exc):
+            engaged = _kill_switch() or {"reason": str(exc), "source": ",".join(KILL_SWITCH_PARAMS)}
+            return {**_refusal(engaged, corr), "tools_available": names, "tenant": session_tenant,
+                    "stopped": "mid-session"}
+        raise
+    log.info("invocation_complete requester=%s case_id=%s result_chars=%d", requester, corr.get("case_id"), len(str(result)))
     return {"result": str(result), "tools_available": names, "tenant": session_tenant}
 
 

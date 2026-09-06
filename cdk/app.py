@@ -132,6 +132,10 @@ if (app.node.try_get_context("network_mode") or "public") == "private":
 identity = IdentityStack(
     app, f"{prefix}-identity", prefix=prefix,
     identity_mode=app.node.try_get_context("identity_mode") or "sandbox",
+    # #170 (PAR-1 port): -c waf=1 attaches a WAFv2 Web ACL (managed common rules + per-IP rate limit) to the
+    # Cognito user pool - the WAF-associable front door of the runtime/auth path (managed AgentCore
+    # endpoints are not WAF-associable). VPC isolation of the governed compute path is -c network_mode=private.
+    waf=str(app.node.try_get_context("waf") or "").lower() in ("1", "true", "yes"),
     tenants=tuple(tenants),   # phase 107/108: one tenant_<id> group per tenant (hybrid multi-tenant)
     federation={
         "issuer_url": app.node.try_get_context("oidc_issuer_url") or "",
