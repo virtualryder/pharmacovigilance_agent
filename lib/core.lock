@@ -6,8 +6,8 @@
 # The 'version' below means: derived from governed-core <version>. CROSS-repo parity is a separate
 # question answered by tools/check_core_parity.py. CI runs both and fails on either.
 version: 1.10.1
-files: 34
-tree_sha256: 9ae9a2d3839d6b671cec5f98a962589a8898dadcdd0cdcd71dc480f2651e96fe
+files: 35
+tree_sha256: e6ac17becbe352a59fdc6b79dcfe1a1ca0f48c3bd4f71c016c0b075681b84956
 118705d21506adb8d7c06a51156bb59497679f644fb4ae3d14bbbfc366643124  lib/CORE_VERSION
 2490c78e8067798930870fcb6be5b99fb6316602f0e6958662970c6823cd4c2d  lib/connector/deploy_connector.sh
 56df0cb5464b5a5ca41766350382cdc63d9a6718fae69b08c73fd87724cd3e14  lib/connector/prove_connector.sh
@@ -16,6 +16,7 @@ tree_sha256: 9ae9a2d3839d6b671cec5f98a962589a8898dadcdd0cdcd71dc480f2651e96fe
 e5403180da5b0ee24b37fa96dcfa2a78e5acb9d7d4aa6417ec023a6a5da636d4  lib/controls/authoritative_context.py
 cc7564916570c47444d6a83754e9ead6c1b984046fd91538fc6ced64d3e26182  lib/controls/case_store.py
 72b7282bf34e72787b3ae15a6449126c4245211709327524b7f9fa0d2a92808e  lib/controls/mask_pii.py
+761fdb79c4f81f85851b4d5e19a1cb0fa261d5638de631ca1d490ff3c3c5e9f6  lib/controls/negation.py
 f58b6106606c291ee19dd0ff61cc304eef7bcc579c333a27805fce2e8338beb7  lib/controls/provenance.py
 b903cb30fcc18f0f6409d110b1f4ab52b42ddb79423607d55285b93c9e07b924  lib/controls/sanitized.py
 fac9eb1de1d926f13c9568577aa769d438eae7d2473b10c8d919bb86c8f9a0b1  lib/controls/workflow_guards.py
