@@ -218,3 +218,5 @@ side effect); and the gateway interceptor makes the Cedar authorization-context 
 earlier governed-core version references above are historical gate records, accurate as of their dates.
 
 **Contributing to `lib/` (REL-4).** `lib/` is the hash-pinned governance-core overlay: any change there must regenerate `lib/core.lock` in the same commit (`python lib/regen_core_lock.py --set <version>`), or CI's `lib/verify_core.py` gate turns red and the supported tag falls behind the fixed core. `bash tools/install_hooks.sh` installs a pre-commit hook that refuses such a commit locally.
+
+> **Parity note (2026-09-06).** Pinning governed-core is not the same as wiring its controls into this pack's IaC. The platform's generated matrix [`WOGplatform/docs/PACK-PARITY.md`](https://github.com/virtualryder/WOGplatform/blob/main/docs/PACK-PARITY.md) shows exactly which controls are wired here versus the lead (benefits) pack; a control absent there is absent here, not "pending validation".
