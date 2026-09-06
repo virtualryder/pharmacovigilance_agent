@@ -1,6 +1,8 @@
 import json
 import re
 
+import negation
+
 # intake_icsr — extract the decision-relevant, NON-PHI fields from a raw adverse-event source
 # (E2B/CIOMS free text or JSON): suspect product, adverse-event term(s), ICH E2B seriousness flags,
 # expectedness. Deterministic and fail-soft. PHI (patient name, DOB, address, identifiers, contact
@@ -55,12 +57,26 @@ def handler(event, context):
     if not event_terms:
         m = re.search(r"(?:adverse event|reaction|ae|event)[^A-Za-z]{0,6}([A-Za-z][A-Za-z0-9\-, ]{2,60})", low)
         event_terms = m.group(1).strip() if m else None
-    flags = {k: bool(re.search(pat, low)) for k, pat in _SERIOUS.items()}
+    # L20b (the L20 class, found on benefits 2026-09-06): these were NEGATION-BLIND. "no
+    # hospitalization required" matched `hospitalization` and flagged the case as serious, and
+    # "not life-threatening" flagged life_threatening.
+    #
+    # The DIRECTION matters and is called out deliberately: for pharmacovigilance, over-flagging
+    # seriousness is the SAFE error - it escalates a case to a human and, at worst, files an
+    # expedited report that was not required. Under-flagging would miss a reportable death. So this
+    # was never a patient-safety bug, but it is still wrong data: a case narrative that rules a
+    # criterion OUT must not be recorded as ruling it IN, or the ICSR misstates the reporter's own
+    # account and the seriousness determination cannot be defended to an inspector.
+    #
+    # negation.asserted() is fail-closed for ASSERTIONS, so it will not invent seriousness; a
+    # genuinely ambiguous narrative still reaches a qualified reviewer through the normal path.
+    flags = negation.asserted_flags(low, _SERIOUS)
     expectedness = e.get("expectedness")
     if not expectedness:
-        if re.search(r"\b(unlisted|unexpected)\b", low):
+        # "not unexpected" must not read as unlisted, and "not listed" must not read as listed.
+        if negation.asserted(low, r"\b(unlisted|unexpected)\b"):
             expectedness = "unlisted"
-        elif re.search(r"\b(listed|expected)\b", low):
+        elif negation.asserted(low, r"\b(listed|expected)\b"):
             expectedness = "listed"
         else:
             expectedness = "unknown"
