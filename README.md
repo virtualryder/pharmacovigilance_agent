@@ -4,7 +4,7 @@
 
 > **SUPPORTED DEPLOYMENT PATH.** The ONE supported path is **AWS CDK** (`cdk/`, 7 stacks, prefix `pv-`)
 > at the validated release tag [`v0.4.0-pilot-rc1`](https://github.com/virtualryder/pharmacovigilance_agent/releases/tag/v0.4.0-pilot-rc1)
-> — cut 2026-09-03 after the **live governed-core 1.9.0 multi-tenant gate** (`RELEASE-MANIFEST.md`; multi-tenant deployments add one data stack per tenant). The shell engine
+> — cut 2026-09-05 from the tree relocked at **governed-core 1.10.1** (**offline-gated**; the last **live** gate on this pack ran on governed-core 1.9.0 on 2026-09-03, env `pv-mt`, tag `v0.3.0-pilot-rc1` — a live re-gate on 1.10.1 is the next milestone; `RELEASE-MANIFEST.md`; multi-tenant deployments add one data stack per tenant). The shell engine
 > (`lib/engine/`) is **legacy/internal reference only**.
 
 [![CI](https://github.com/virtualryder/pharmacovigilance_agent/actions/workflows/ci.yml/badge.svg)](https://github.com/virtualryder/pharmacovigilance_agent/actions/workflows/ci.yml)

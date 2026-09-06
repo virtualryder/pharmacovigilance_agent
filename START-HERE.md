@@ -2,7 +2,7 @@
 
 *One page. What this is, what's proven, how to evaluate it, and what a pilot looks like. Target
 validated release: **[`v0.4.0-pilot-rc1`](https://github.com/virtualryder/pharmacovigilance_agent/releases/tag/v0.4.0-pilot-rc1)**
-(cut 2026-09-03 after the live governed-core 1.9.0 multi-tenant gate; earlier validated tags `v0.1.1-pilot-rc1` (EP1) and `v0.2.0-pilot-rc1` (EP2); deploy tags, never `main`). Supported deployment path: **AWS CDK**
+(cut 2026-09-05 from the tree relocked at governed-core 1.10.1 — offline-gated; the last live gate on this pack was the governed-core 1.9.0 multi-tenant gate of 2026-09-03 on `v0.3.0-pilot-rc1`, env `pv-mt`; earlier validated tags `v0.1.1-pilot-rc1` (EP1) and `v0.2.0-pilot-rc1` (EP2); deploy tags, never `main`). Supported deployment path: **AWS CDK**
 (`cdk/`); the shell engine is legacy/internal.*
 
 > **Evaluating for a pilot?** Read [`PV-PILOT-READINESS-PLAN.md`](PV-PILOT-READINESS-PLAN.md) and
@@ -49,7 +49,7 @@ coding, E2B(R3) XML + FAERS/EudraVigilance gateway, Argus/ArisG integration.
 ## Status in one line
 
 Control-plane hardened + full CDK/Gate-B IaC, **live EP1-validated** (2026-07-27, `pv-val1`),
-**192 offline tests (incl. 28 CDK synthesis)**, tags `v0.1.1-pilot-rc1` → `v0.3.0-pilot-rc1`. Evidence:
+**192 offline tests (incl. 28 CDK synthesis)**, tags `v0.1.1-pilot-rc1` → `v0.4.0-pilot-rc1` (v0.4.0 offline-gated on 1.10.1; v0.3.0 is the last live-gated tag). Evidence:
 `evidence/EP1-VALIDATION.md` (validate PASS, controller to the human gate, DuplicateHold, **strict PHI
 canary 0 leaks**); `evidence/AGENTCORE-111-GATE-2026-09-03.md` (governed-core 1.9.0 on two tenants + the real
 AgentCore Runtime: isolation 12/12, transparency 13/13 per tenant, canary 0 hits, kill switch 29/29, budget
