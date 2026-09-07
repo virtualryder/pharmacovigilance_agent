@@ -16,6 +16,10 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 import trace_case as tc  # noqa: E402
 
+# L39: these fixtures passed (0, 1) - 1970 - which read_lambda_calls now refuses on purpose. An
+# impossible window must raise, not quietly return "no audit lines", so the fixture names a real one.
+WINDOW = (1788818472000, 1788818935000)
+
 CASE = "LIN-E02DBE"
 TRACE = "6a9e99c2a2d110c3facef6271573ff14"
 EXEC = "arn:aws:states:us-east-1:1234:execution:pv-fp-determination-workflow:lineage-lin-e02dbe"
@@ -54,7 +58,7 @@ class _Logs:
 
 def _read(messages, keys, case_id=CASE):
     logs = _Logs(messages)
-    rows = tc.read_lambda_calls(logs, ["/aws/lambda/pv-fp-write-audit"], case_id, keys, 0, 1)
+    rows = tc.read_lambda_calls(logs, ["/aws/lambda/pv-fp-write-audit"], case_id, keys, *WINDOW)
     return rows, logs.scans[0]
 
 

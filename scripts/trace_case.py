@@ -307,14 +307,44 @@ def read_gateway_rows(logs, group, session_ids, mcp_ids, trace_ids, start, end):
 #
 # Verified live against the case that failed attempt 17: 11 audit lines against 11 CloudTrail
 # invokes over the exact proof window - parity, zero orphans.
+# ---- L39: filter_log_events takes MILLISECONDS; start_query takes SECONDS -----------------------
+# L33 replaced the Insights query in read_lambda_calls with filter_log_events but kept passing the
+# callers' seconds. As milliseconds, a 2026 timestamp is 1970-01-21, so the scan asked for a window
+# 56 years in the past and got back exactly nothing - on every run, silently. It survived because
+# the callers disagree and only one is wrong: lineage_proof computes ms and worked, while
+# obs_two_tenant_proof computes seconds and reported "no audit lines" for both tenants.
+#
+# The unit is normalized in ONE place and an impossible window RAISES. That matters more than the
+# conversion: an unlabelled unit that silently answers "no evidence" is the L25/L29/L31/L33/L33b
+# family, and the answer to that family is always to fail loudly rather than report an absence.
+_YEAR_2020_MS = 1577836800000
+
+
+def _window_ms(start, end):
+    """Normalize a (start, end) window to epoch milliseconds. Accepts seconds or milliseconds."""
+    def ms(t):
+        t = int(t)
+        return t * 1000 if t < 100000000000 else t
+    a, b = ms(start), ms(end)
+    if a >= b:
+        raise ValueError("empty log window: start=%r end=%r (normalized %d..%d)" % (start, end, a, b))
+    if a < _YEAR_2020_MS:
+        raise ValueError(
+            "log window starts before 2020 (normalized %d ms). This is a caller unit bug, not an "
+            "empty result - refusing to report an absence of evidence from an impossible window."
+            % a)
+    return a, b
+
+
 def read_lambda_calls(logs, groups, case_id, keys, start, end):
     needles = [n for n in ([case_id] + list(keys.get("trace_id", [])) +
                            list(keys.get("execution_arn", [])) + list(keys.get("session_id", []))) if n]
+    _start_ms, _end_ms = _window_ms(start, end)   # L39
     out = []
     for g in [g for g in groups if g]:
         token = None
         while True:
-            kw = {"logGroupName": g, "startTime": int(start), "endTime": int(end), "limit": 1000}
+            kw = {"logGroupName": g, "startTime": _start_ms, "endTime": _end_ms, "limit": 1000}
             if token:
                 kw["nextToken"] = token
             # L33b: a swallowed throttle is a SILENT TRUNCATION, and a truncated read looks exactly
