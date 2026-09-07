@@ -1,0 +1,36 @@
+{
+  "//": "Pack descriptor (PAR-4). Everything the shared governance harness needs to know about THIS pack.",
+  "//why": "The portfolio gate and the lineage proof were benefits-only scripts with pack facts baked in, so a second pack could not be gated without forking the harness - and forking the harness is how four copies of the log readers drifted three fixes apart. Every pack-specific fact the gate needs lives here; the harness itself carries none.",
+  "//derived": "Every value below was read out of THIS repo, not copied from the benefits descriptor: prefix from cdk/app.py, tenants from cdk/ (sp-a/sp-b, 7 occurrences each), stacks from app.py under the gate's own context, runtime name from agents/pharmacovigilance/manifest.yaml, tool names from the @telemetry.instrument decorators (the identity that actually appears in the aegis.call line), signoff state from cdk/pv_stacks/workflow_stack.py.",
+
+  "pack": "pharmacovigilance",
+  "agent_dir": "agents/pharmacovigilance",
+  "prefix_prefix": "pv",
+  "tenants": ["sp-a", "sp-b"],
+
+  "stacks": ["data", "{tenant}-data", "identity", "lineage", "compute", "workflow", "gateway", "observability"],
+  "//stacks": "network is deliberately absent: it is provisioned only under -c network_mode=private, and the gate's context does not set it. lineage is present because the gate always passes -c capture_all=1.",
+
+  "runtime": {
+    "name": "pv_runtime_agent",
+    "//": "matched as a substring against ECR repositories when reporting toolkit residue"
+  },
+
+  "lineage": {
+    "tool_names": [
+      "intake_icsr", "openfda_lookup", "mask_pii", "assess_seriousness", "detect_duplicate",
+      "record_causality", "pv_core", "ingest_case", "workflow_guards",
+      "request_signoff", "signoff_register", "approve_signoff", "finalize_signoff", "write_audit"
+    ],
+    "//tool_names": "These are @telemetry.instrument names, NOT the MCP tool names in manifest.yaml. The two differ for the core Lambda: the manifest exposes draft_narrative / finalize_submission / commit_causality on the pv-core target, but all three run inside one function that logs a single aegis.call line under 'pv_core'. The lineage proof compares CloudTrail Lambda invokes against aegis.call lines, so the instrument name is the one that has to be declared here.",
+    "tool_aliases": {
+      "coretools": "pv_core",
+      "//": "the core-tools Lambda stem shares no lexical overlap with the pv_core tool it hosts, so it needs an explicit alias - the same shape as benefits' coretools -> benefits_core"
+    }
+  },
+
+  "workflow": {
+    "signoff_state": "HumanSignoff",
+    "//": "the state a driven case must reach for LIN_case_driven to pass"
+  }
+}
