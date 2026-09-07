@@ -1,0 +1,22 @@
+# Line endings (platform COPILOT-4, 2026-09-03, applied preventively): shell scripts, Python, YAML,
+# JSON, TOML and Markdown are LF in the repository. A script committed with CRLF fails on Linux
+# (`set -euo pipefail\r`: "invalid option name"). Binary/office files stay opaque.
+#
+# *.md was added 2026-09-07 (L36). Without it a Markdown file that picked up CRLF showed as a
+# whole-file diff - 78 changed lines in evidence/INDEPENDENT-VERIFICATION-RESULT.md with not one
+# character of content different - which is noise that hides real evidence changes. The
+# pharmacovigilance pack had no .gitattributes at all and had committed four files with CRLF.
+*.sh    text eol=lf
+*.py    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.json  text eol=lf
+*.toml  text eol=lf
+*.md    text eol=lf
+*.pptx  binary
+*.docx  binary
+*.xlsx  binary
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.drawio text eol=lf
