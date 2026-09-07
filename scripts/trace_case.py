@@ -285,19 +285,70 @@ def read_gateway_rows(logs, group, session_ids, mcp_ids, trace_ids, start, end):
     return out
 
 
+# ---- L31/L33: read the audit lines with a plain scan, not a query engine ------------------------
+# L31 (gate attempt 15) removed a three-term `or @message like ...` chain from this reader after
+# proving that each disjunct matched alone while the union returned zero rows. That fix was
+# necessary and INSUFFICIENT, and attempt 17 proved it: with the OR-chain gone, the remaining
+# two-term `@message like "aegis" and @message like "args_sha256"` filter ALSO silently returned
+# nothing for `write_audit`, and the gate failed `LIN_zero_orphans` on the same tool again.
+#
+# The measurement that settled it, against the same log group and the SAME window:
+#
+#     Insights, filter aegis + args_sha256          -> 0 rows
+#     Insights, filter aegis + args_sha256, +120s   -> 0 rows
+#     Insights, NO filter                           -> the line is right there, 13:46:51.712
+#     filter_log_events, exact proof window         -> 11 rows, write_audit included
+#
+# So the window was never wrong and the line was never missing: CloudWatch Logs Insights was
+# dropping rows for `like` filters on `@message`. Chasing which filter shape works today is how L31
+# ended up half-fixed, so this no longer uses the query engine at all. `filter_log_events` is a
+# plain paginated scan of the window - no filter language, no optimizer - and every predicate is
+# applied HERE, in Python, where it is deterministic and unit-testable.
+#
+# Verified live against the case that failed attempt 17: 11 audit lines against 11 CloudTrail
+# invokes over the exact proof window - parity, zero orphans.
 def read_lambda_calls(logs, groups, case_id, keys, start, end):
-    cond = ['@message like "aegis" and @message like "args_sha256"', '(@message like "%s"' % case_id]
-    for t in keys.get("trace_id", []) + keys.get("execution_arn", []) + keys.get("session_id", []):
-        cond[1] += ' or @message like "%s"' % t
-    cond[1] += ")"
-    q = "fields @timestamp, @message | filter %s | sort @timestamp asc" % " and ".join(cond)
+    needles = [n for n in ([case_id] + list(keys.get("trace_id", [])) +
+                           list(keys.get("execution_arn", [])) + list(keys.get("session_id", []))) if n]
     out = []
-    for row in _insights(logs, groups, q, start, end, 2000):
-        m = _parse(row)
-        if m and m.get("aegis") == "call":
-            out.append(m)
-    return out
-
+    for g in [g for g in groups if g]:
+        token = None
+        while True:
+            kw = {"logGroupName": g, "startTime": int(start), "endTime": int(end), "limit": 1000}
+            if token:
+                kw["nextToken"] = token
+            # L33b: a swallowed throttle is a SILENT TRUNCATION, and a truncated read looks exactly
+            # like a governed tool that never audited itself. Attempt 18 proved that the hard way -
+            # `except Exception: break` here turned throttling during the transparency proof into
+            # `lambda_calls_logged: false` on both tenants and a red G111. Retry the throttles, and
+            # let anything else RAISE: failing loudly beats reporting a clean-looking absence.
+            for attempt in range(6):
+                try:
+                    r = logs.filter_log_events(**kw)
+                    break
+                except logs.exceptions.ResourceNotFoundException:
+                    r = None
+                    break
+                except Exception as exc:
+                    if type(exc).__name__ not in ("ThrottlingException", "LimitExceededException",
+                                                  "TooManyRequestsException", "ClientError") or attempt == 5:
+                        raise
+                    time.sleep(1.5 * (2 ** attempt))
+            if r is None:
+                break
+            for ev in r.get("events", []):
+                msg = ev.get("message", "")
+                if '"aegis"' not in msg or "args_sha256" not in msg:
+                    continue
+                if needles and not any(n in msg for n in needles):
+                    continue
+                m = _parse({"@message": msg})
+                if m and m.get("aegis") == "call":
+                    out.append(m)
+            token = r.get("nextToken")
+            if not token:
+                break
+    return sorted(out, key=lambda m: m.get("ts") or 0)
 
 def read_model_rows(logs, group, case_id, session_ids, start, end):
     cond = '@message like "%s"' % case_id
