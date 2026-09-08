@@ -4,6 +4,7 @@ import base64
 import time
 import hashlib
 import urllib.request
+import urllib.parse
 import urllib.error
 
 # sor_api.py — MOCK external "system of record" (stands in for a real verification service such as EIV,
@@ -42,6 +43,21 @@ _SHA256_DIGESTINFO = bytes.fromhex("3031300d060960864801650304020105000420")
 _JWKS_CACHE = {"url": None, "keys": {}, "exp": 0}
 
 
+def _require_https(url):
+    """B310: refuse anything that is not https before opening it.
+
+    Bandit's warning is real, not noise: these URLs come from configuration (SOR_URL, a JWKS
+    endpoint, a CloudFormation ResponseURL). urlopen honours file:// and custom schemes, so a
+    config value an attacker can influence turns a fetch into local-file disclosure. Validate the
+    scheme and fail closed; the nosec on the urlopen below points at THIS check, it does not wave
+    the finding away.
+    """
+    scheme = urllib.parse.urlsplit(url).scheme
+    if scheme != "https":
+        raise ValueError("refusing non-https URL scheme %r" % (scheme or "<none>"))
+    return url
+
+
 def _b64url(s):
     if isinstance(s, str):
         s = s.encode("ascii")
@@ -69,7 +85,8 @@ def _jwks_url():
 
 def _fetch_jwks(url):
     req = urllib.request.Request(url, headers={"User-Agent": "sor-api/1.0"})
-    with urllib.request.urlopen(req, timeout=5) as r:
+    _require_https(url)
+    with urllib.request.urlopen(req, timeout=5) as r:  # nosec B310 - scheme checked above
         doc = json.loads(r.read().decode("utf-8"))
     return {k.get("kid"): k for k in doc.get("keys", []) if k.get("kty") == "RSA" and k.get("kid")}
 

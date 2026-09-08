@@ -22,6 +22,21 @@ SCOPE = os.environ.get("SCOPE", "")
 REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 
+def _require_https(url):
+    """B310: refuse anything that is not https before opening it.
+
+    Bandit's warning is real, not noise: these URLs come from configuration (SOR_URL, a JWKS
+    endpoint, a CloudFormation ResponseURL). urlopen honours file:// and custom schemes, so a
+    config value an attacker can influence turns a fetch into local-file disclosure. Validate the
+    scheme and fail closed; the nosec on the urlopen below points at THIS check, it does not wave
+    the finding away.
+    """
+    scheme = urllib.parse.urlsplit(url).scheme
+    if scheme != "https":
+        raise ValueError("refusing non-https URL scheme %r" % (scheme or "<none>"))
+    return url
+
+
 def _coerce(e):
     e = e or {}
     if isinstance(e, str):
@@ -62,7 +77,8 @@ def handler(event, context):
     req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token,
                                                "User-Agent": "governed-connector/1.0"})
     try:
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        _require_https(url)
+        with urllib.request.urlopen(req, timeout=8) as resp:  # nosec B310 - scheme checked above
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as ex:
         return {"verified": False, "error": "system-of-record returned HTTP %s" % ex.code,

@@ -9,8 +9,24 @@ policies + re-assert ENFORCE. Fail-loud: any control-plane error fails the stack
 import json
 import time
 import urllib.request
+import urllib.parse
 
 import boto3
+
+
+def _require_https(url):
+    """B310: refuse anything that is not https before opening it.
+
+    Bandit's warning is real, not noise: these URLs come from configuration (SOR_URL, a JWKS
+    endpoint, a CloudFormation ResponseURL). urlopen honours file:// and custom schemes, so a
+    config value an attacker can influence turns a fetch into local-file disclosure. Validate the
+    scheme and fail closed; the nosec on the urlopen below points at THIS check, it does not wave
+    the finding away.
+    """
+    scheme = urllib.parse.urlsplit(url).scheme
+    if scheme != "https":
+        raise ValueError("refusing non-https URL scheme %r" % (scheme or "<none>"))
+    return url
 
 
 def _send(event, context, status, data=None, reason=""):
@@ -22,7 +38,8 @@ def _send(event, context, status, data=None, reason=""):
     }).encode()
     req = urllib.request.Request(event["ResponseURL"], data=body, method="PUT",
                                  headers={"Content-Type": ""})
-    urllib.request.urlopen(req, timeout=30)
+    _require_https(event["ResponseURL"])
+    urllib.request.urlopen(req, timeout=30)  # nosec B310 - scheme checked above
 
 
 def _wait(fn, want, tries=40, delay=6):
