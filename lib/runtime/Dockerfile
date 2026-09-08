@@ -1,6 +1,6 @@
 # P0-8 supply-chain: pin the base image by DIGEST (not the mutable :3.12-slim tag) and run as a
-# non-root user. The digest is python:3.12-slim resolved 2026-07; re-resolve on a deliberate base bump.
-FROM public.ecr.aws/docker/library/python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
+# non-root user. The digest is python:3.12-slim resolved 2026-09-08; re-resolve on a deliberate base bump.
+FROM public.ecr.aws/docker/library/python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
 
 WORKDIR /app
 

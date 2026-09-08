@@ -34,3 +34,11 @@ cdk/.build/
 # carries stack ARNs with the live account id. Caught by tools/scan_account_ids.py after the fact.
 *.log.err
 *.err
+
+# CDK synth output under any suffix. `cdk/cdk.out/` alone missed the per-run
+# directories the gate harness creates (cdk.out-5668, cdk.out-packcheck, ...),
+# and `cdk/outputs-*.json` carries the live account id in stack outputs.
+cdk.out/
+cdk/cdk.out-*/
+cdk.out-*/
+cdk/outputs-*.json
