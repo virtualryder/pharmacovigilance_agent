@@ -18,5 +18,15 @@
 # Source: https://github.com/virtualryder/governed-core  (Apache-2.0, public)
 # Release: https://github.com/virtualryder/governed-core/releases/tag/v1.11.1
 
+#
+# WHERE THE HASH COMES FROM (L51, 2026-09-08). Take it from the release's own RELEASE-HASHES.txt,
+# never from a wheel you built locally. `gh release create` uploads your local wheel, and the
+# release workflow that fires on the same tag then builds its own and REPLACES that asset - so a
+# hash verified by downloading the asset immediately after publishing can be correct at the moment
+# you check it and stale two minutes later, which is exactly how CI came to fail with
+# "THESE PACKAGES DO NOT MATCH THE HASHES" on a hash that had been verified by hand.
+# The check that means something is running the install itself:
+#     python -m pip install --force-reinstall --require-hashes -r requirements-core.txt
+#
 governed-core @ https://github.com/virtualryder/governed-core/releases/download/v1.11.1/governed_core-1.11.1-py3-none-any.whl \
-    --hash=sha256:8812e3ccfa27c76ba21dcdba2215be772223fa516164597ac0de9c54e0429cf7
+    --hash=sha256:149423f0b7d4f68658bfeb72d2b287d52a3aabee225bf2c2ae9f21d87b0f4903
