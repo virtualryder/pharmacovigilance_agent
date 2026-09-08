@@ -88,11 +88,28 @@ def main():
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 
-    repos = [pathlib.Path(r).resolve() for r in args.repos]
-    repos = [r for r in repos if r.exists()]
+    given = [pathlib.Path(r).resolve() for r in args.repos]
+    missing = [str(r) for r in given if not r.exists()]
+    repos = [r for r in given if r.exists()]
+
+    # 2026-09-08 (#230). This used to `return 0` when it was given fewer than two repos - so the
+    # single most likely way to misconfigure it in CI, invoking it with no arguments or with a path
+    # that does not exist, produced a PASS and a friendly message. A parity check that reports
+    # success when it compared nothing is the same defect class as the checkov job that synthesized
+    # zero templates and passed (L44b). Refusing is the only safe answer: it cannot know whether the
+    # repos it was not given would have agreed.
+    if missing:
+        print("::error::parity check was given %d path(s) that do not exist: %s"
+              % (len(missing), ", ".join(missing)))
+        print("Refusing to report parity over a subset - the repos that are missing are exactly the "
+              "ones a drift would hide in.")
+        return 2
     if len(repos) < 2:
-        print("need at least two repos to compare; pass their paths as arguments")
-        return 0
+        print("::error::parity needs at least two repos to compare; got %d. Pass their paths as "
+              "arguments." % len(repos))
+        print("This exits NON-ZERO on purpose: it previously exited 0 here, so a CI step that "
+              "invoked it with no arguments reported PARITY OK having compared nothing.")
+        return 2
 
     print("comparing %d repos:" % len(repos))
     for r in repos:
