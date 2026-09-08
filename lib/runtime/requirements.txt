@@ -9,4 +9,4 @@ aws-opentelemetry-distro==0.18.0
 # task 128: the shared control core (budget meter) - pinned by release tag URL. This file carries no
 # --hash lines (see the P0-8 note above), so the core is version-pinned here and hash-pinned in the
 # Lambda bundle (requirements-core.txt, --require-hashes); the CI-attached wheel is the canonical asset.
-governed-core @ https://github.com/virtualryder/governed-core/releases/download/v1.11.0/governed_core-1.11.0-py3-none-any.whl
+governed-core @ https://github.com/virtualryder/governed-core/releases/download/v1.11.1/governed_core-1.11.1-py3-none-any.whl

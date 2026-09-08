@@ -5,10 +5,10 @@
 # 'identical core' while the trees differed is how the exactly-once finalization gap hid for weeks.
 # The 'version' below means: derived from governed-core <version>. CROSS-repo parity is a separate
 # question answered by tools/check_core_parity.py. CI runs both and fails on either.
-version: 1.11.0
+version: 1.11.1
 files: 35
-tree_sha256: 2750e5d0aebb3be394017f869cfc9b396b000ce9f36b8f9a78182857ff4061ab
-74ee4d121463989183f9a9b848577eb2434f3f5d095de2a4b197bf29ffa2399b  lib/CORE_VERSION
+tree_sha256: 961cbacf89aae3b5ac66a312bd271ebd144ad2a51591ecda10047223c09b0ac6
+4f9416d650bd28343244b868dfebdb11e70d7b32423536cb87b8c31fde62f993  lib/CORE_VERSION
 2490c78e8067798930870fcb6be5b99fb6316602f0e6958662970c6823cd4c2d  lib/connector/deploy_connector.sh
 56df0cb5464b5a5ca41766350382cdc63d9a6718fae69b08c73fd87724cd3e14  lib/connector/prove_connector.sh
 f86909d61e9cdc3dbe9039ae81af546118e2613c9a2db261bba43ff25d5a1340  lib/connector/sor_api.py
@@ -39,7 +39,7 @@ ea4afa311721ced06e234641d6e90b869867cb9735902c9946d69064f46c7947  lib/runtime/_o
 c559c3405ce9d603190fba821dd5400874a5562c22363e5f546dc00677412a8d  lib/runtime/_smoke.sh
 508b49b10002c6b6c7a421bd3360e8732d4be4f4b368dfe7e16775c755d98359  lib/runtime/_verify_rt.sh
 097a7329b49595b7849447cc80be2e82cf6373faa077c95d13f77403c5bac8b0  lib/runtime/agent.py
-5e7ec39b9ee85fe55c65fd9253e37b7aff8b8d2c923ccbdd151735fd8e88b4c5  lib/runtime/requirements.txt
+c304aeac64a64d5a98723c138cbddb0ed4de97689e9fff0f8cab86f1d168f98e  lib/runtime/requirements.txt
 a20960c97b7b9aba6b84c848ff74d1fb4363ed00c6fab654a63a21cc05841f48  lib/runtime/setup_venv.sh
 e1c1048cbc99df0fa70a998dec634fb4921a6e37acc682a0f1808fb0ea5bd04b  lib/runtime/token_boundary.py
 628d9b131c28c5c32a4518e60ac26fb837cc259c31e854c7027122980b3bcf4a  lib/verify_core.py
