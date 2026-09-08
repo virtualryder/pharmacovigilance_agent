@@ -2,34 +2,59 @@
 # This line must stay FIRST: .gitattributes is last-match-wins, so the explicit `binary`
 # declarations below still override it for Office files, images and archives.
 #
-# This replaced an extension ENUMERATION. The enumeration was green and inert: it listed
-# .sh/.py/.yml/.json/.toml/.md and therefore silently allowed CRLF into policies/*.cedar
-# (the input to the POLICY_VERSION provenance digest), tools/hooks/pre-commit (a bash
-# script), lib/CORE_VERSION (hashed by lib/core.lock) and RELEASE. A verifier cloning on
-# Windows with stock Git (core.autocrlf=true) would compute different digests than we do
-# and fail verification for a reason unrelated to any control.
+# It replaced an extension ENUMERATION, which was green and inert: it listed
+# .sh/.py/.yml/.yaml/.json/.toml/.md and therefore silently allowed CRLF into
+# policies/*.cedar (the input to the POLICY_VERSION provenance digest),
+# tools/hooks/pre-commit (a bash script), lib/CORE_VERSION (hashed by lib/core.lock)
+# and RELEASE. To be exact about the blast radius: the digests were NOT corrupted -
+# verify_core._sha256 and _digest_of both collapse CRLF deliberately, and that was
+# verified by CRLF-ifying both inputs and re-running. What CRLF actually cost was
+# determinism and diff noise, which is enough.
+#
+# This file is SHARED (tools/check_doc_parity.py): all four packs must carry it
+# byte-identical. Three different versions had already drifted when this was written -
+# the L58 shape, copied by hand with nothing comparing the copies.
 * text=auto eol=lf
 
-# Line endings (platform COPILOT-4, 2026-09-03, applied preventively): shell scripts, Python, YAML,
-# JSON, TOML and Markdown are LF in the repository. A script committed with CRLF fails on Linux
-# (`set -euo pipefail\r`: "invalid option name"). Binary/office files stay opaque.
-#
-# *.md was added 2026-09-07 (L36). Without it a Markdown file that picked up CRLF showed as a
-# whole-file diff - 78 changed lines in evidence/INDEPENDENT-VERIFICATION-RESULT.md with not one
-# character of content different - which is noise that hides real evidence changes. The
-# pharmacovigilance pack had no .gitattributes at all and had committed four files with CRLF.
-*.sh    text eol=lf
-*.py    text eol=lf
-*.yml   text eol=lf
-*.yaml  text eol=lf
-*.json  text eol=lf
-*.toml  text eol=lf
-*.md    text eol=lf
+# Prior history, kept because it explains why the enumeration existed at all.
+# COPILOT-4 (2026-09-03), applied preventively: a script committed with CRLF fails on
+# Linux (`set -euo pipefail\r`: "invalid option name"). *.md was added 2026-09-07 (L36)
+# after a Markdown file that picked up CRLF showed as a 78-line whole-file diff with not
+# one character of content different - noise that hides real evidence changes. The
+# pharmacovigilance pack had no .gitattributes at all; neither did housing (found
+# 2026-09-08, the third time).
+
+# Office documents - ZIP archives. CRLF<->LF rewriting inside them strips embedded media
+# and can make the file unopenable. `binary` = `-text -diff`.
 *.pptx  binary
+*.ppt   binary
 *.docx  binary
+*.doc   binary
 *.xlsx  binary
+*.xls   binary
+
+# PDFs, images, archives, fonts
 *.pdf   binary
 *.png   binary
 *.jpg   binary
-*.drawio text eol=lf
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.zip   binary
+*.gz    binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+
+# Text formats pinned to LF explicitly, so a reader of this file sees them named rather
+# than only implied by `text=auto`.
+*.sh     text eol=lf
+*.py     text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.json   text eol=lf
+*.toml   text eol=lf
+*.md     text eol=lf
 *.cedar  text eol=lf
+*.svg    text eol=lf
+*.drawio text eol=lf
