@@ -51,9 +51,9 @@ jobs:
         run: |
           cp .secrets.baseline "$RUNNER_TEMP/baseline.committed.json"
           detect-secrets scan --baseline .secrets.baseline
-          # NOT `git diff --exit-code`: detect-secrets rewrites generated_at on every
-          # scan, so that comparison could never pass and accused the developer of
-          # adding a secret on every run. Compare the findings instead.
+          # NOT `git diff --exit-code`: detect-secrets rewrites generated_at with the current time
+          # on every scan, so that comparison always reported "new potential secret(s)" and the
+          # BLOCKING step could never pass, on any tree. Compare the findings instead.
           python tools/check_secrets_baseline.py "$RUNNER_TEMP/baseline.committed.json" .secrets.baseline
 
   iac-scan:
@@ -71,7 +71,8 @@ jobs:
           node-version: "22"
 
       # The CDK app imports governed_core; without the pinned core `cdk synth` dies with
-      # ModuleNotFoundError and the IaC gate scans ZERO templates.
+      # ModuleNotFoundError and the IaC gate never scans a single template. It failed that way
+      # silently-enough that "checkov configured" read as "IaC scanned".
       - name: Install the PINNED governance core (hash-verified)
         run: python -m pip install --require-hashes -r requirements-core.txt
 
@@ -116,24 +117,29 @@ jobs:
 
       # The runtime image is what AgentCore actually runs. pip-audit sees requirements.txt; only an
       # image scan sees the base image's OS packages, which is where most CRITICALs live.
-      # A digest pin freezes the OS packages, so it accrues every advisory published after
-      # it was resolved. Print what the tag resolves to NOW so a base bump is a copy-paste
-      # from a trusted runner rather than a guess.
+      # A digest pin freezes the OS packages too, so it accrues every advisory published after it
+      # was resolved. Nothing was measuring that, and trivy found 30 fixable HIGH/CRITICAL in a base
+      # pinned two months earlier. This prints the digest the tag resolves to NOW, so a base bump is
+      # a copy-paste from a trusted runner rather than a guess - and it appears in the log of every
+      # run, which is where someone will actually see it.
       - name: Report the current upstream digest for the pinned base
         run: |
           echo "pinned in lib/runtime/Dockerfile:"
           grep -oE 'sha256:[0-9a-f]{64}' lib/runtime/Dockerfile
           echo "python:3.12-slim resolves TODAY to:"
-          docker buildx imagetools inspect public.ecr.aws/docker/library/python:3.12-slim | head -3 || true
+          docker manifest inspect public.ecr.aws/docker/library/python:3.12-slim \
+            | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('digest') or '(index - see manifests below)')" || true
+          docker buildx imagetools inspect public.ecr.aws/docker/library/python:3.12-slim \
+            | head -3 || true
 
       - name: Build the runtime image
         run: docker build -t aegis-runtime:ci lib/runtime
 
       - name: Scan the runtime image - BLOCKING on HIGH/CRITICAL
-        # Pinned to the COMMIT v0.36.0 resolves to. @0.28.0 never existed (this action's
-        # tags are v-prefixed), so the container scan died at "Set up job" and had
-        # never scanned an image. A commit, not a tag: tags move, and a third-party
-        # action runs with repository credentials.
+        # Pinned to the COMMIT the v0.36.0 tag resolves to, not the tag: a tag can be moved, a
+        # third-party action runs with repo credentials, and the previous pin (@0.28.0) did not
+        # exist at all - this action's tags are v-prefixed - so the container scan had been
+        # failing at "Set up job" with "unable to find version" and had never scanned an image.
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: aegis-runtime:ci
