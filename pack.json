@@ -17,6 +17,24 @@
   },
 
   "lineage": {
+    "lambda_stems": [
+      "ingest-case",
+      "intake-icsr",
+      "openfda-lookup",
+      "mask-pii",
+      "assess-seriousness",
+      "detect-duplicate",
+      "record-causality",
+      "core-tools",
+      "write-audit",
+      "request-signoff",
+      "signoff-register",
+      "finalize",
+      "workflow-guards",
+      "approve-signoff"
+    ],
+    "//lambda_stems": "The governed tool Lambdas this pack deploys, as the stem after the <prefix>- in the function name. Declared because the lineage proof drops any CloudTrail invoke it cannot map to a tool identity (`if t:`), SILENTLY - so a governed Lambda whose name has no lexical overlap with the tool it hosts is simply absent from the parity check, and 'zero orphans' quietly means 'zero orphans among the ones that mapped'. tests/test_lineage_tool_mapping.py asserts every stem here resolves. Found 2026-09-08 while preparing REL-5 (L41).",
+
     "tool_names": [
       "intake_icsr", "openfda_lookup", "mask_pii", "assess_seriousness", "detect_duplicate",
       "record_causality", "pv_core", "ingest_case", "workflow_guards",
@@ -24,6 +42,7 @@
     ],
     "//tool_names": "These are @telemetry.instrument names, NOT the MCP tool names in manifest.yaml. The two differ for the core Lambda: the manifest exposes draft_narrative / finalize_submission / commit_causality on the pv-core target, but all three run inside one function that logs a single aegis.call line under 'pv_core'. The lineage proof compares CloudTrail Lambda invokes against aegis.call lines, so the instrument name is the one that has to be declared here.",
     "tool_aliases": {
+      "finalize": "finalize_signoff",
       "coretools": "pv_core",
       "//": "the core-tools Lambda stem shares no lexical overlap with the pv_core tool it hosts, so it needs an explicit alias - the same shape as benefits' coretools -> benefits_core"
     }
