@@ -319,21 +319,35 @@ def read_gateway_rows(logs, group, session_ids, mcp_ids, trace_ids, start, end):
 # family, and the answer to that family is always to fail loudly rather than report an absence.
 _YEAR_2020_MS = 1577836800000
 
+# PAR-4, 2026-09-08. governed-core 1.11.0 shipped `governed_core.proofs` as ONE shared proof
+# library so a fix like L39 would not have to be applied four times - and then nothing imported
+# it. A shared library no caller consumes is not a de-forked harness, it is a fifth copy. This is
+# the first real consumption: when the pinned core is installed (it always is on the deploy path
+# and in CI), the window normaliser comes FROM the library. The local definition below stays as
+# the fallback for an operator running a proof script without the core installed, and
+# tests/test_trace_window.py asserts the two agree on the cases that matter - so the fallback
+# cannot drift away from the library the way the four forked copies drifted from each other.
+try:
+    from governed_core.proofs import window_ms as _window_ms   # noqa: F401
+    _WINDOW_MS_SOURCE = "governed_core.proofs"
+except Exception:                                              # noqa: BLE001 - optional dependency
+    _WINDOW_MS_SOURCE = "local fallback (governed_core not importable)"
 
-def _window_ms(start, end):
-    """Normalize a (start, end) window to epoch milliseconds. Accepts seconds or milliseconds."""
-    def ms(t):
-        t = int(t)
-        return t * 1000 if t < 100000000000 else t
-    a, b = ms(start), ms(end)
-    if a >= b:
-        raise ValueError("empty log window: start=%r end=%r (normalized %d..%d)" % (start, end, a, b))
-    if a < _YEAR_2020_MS:
-        raise ValueError(
-            "log window starts before 2020 (normalized %d ms). This is a caller unit bug, not an "
-            "empty result - refusing to report an absence of evidence from an impossible window."
-            % a)
-    return a, b
+    def _window_ms(start, end):
+        """Normalize a (start, end) window to epoch milliseconds. Accepts seconds or milliseconds."""
+        def ms(t):
+            t = int(t)
+            return t * 1000 if t < 100000000000 else t  # < ~year 5138 in seconds => it was seconds
+        a, b = ms(start), ms(end)
+        if a >= b:
+            raise ValueError("empty log window: start=%r end=%r (normalized %d..%d)"
+                             % (start, end, a, b))
+        if a < _YEAR_2020_MS:
+            raise ValueError(
+                "log window starts before 2020 (normalized %d ms). This is a caller unit bug, not "
+                "an empty result - refusing to report an absence of evidence from an impossible "
+                "window." % a)
+        return a, b
 
 
 def read_lambda_calls(logs, groups, case_id, keys, start, end):
