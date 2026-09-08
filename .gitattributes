@@ -1,3 +1,15 @@
+# DEFAULT (2026-09-08, L60). Everything git detects as text is LF in the repository.
+# This line must stay FIRST: .gitattributes is last-match-wins, so the explicit `binary`
+# declarations below still override it for Office files, images and archives.
+#
+# This replaced an extension ENUMERATION. The enumeration was green and inert: it listed
+# .sh/.py/.yml/.json/.toml/.md and therefore silently allowed CRLF into policies/*.cedar
+# (the input to the POLICY_VERSION provenance digest), tools/hooks/pre-commit (a bash
+# script), lib/CORE_VERSION (hashed by lib/core.lock) and RELEASE. A verifier cloning on
+# Windows with stock Git (core.autocrlf=true) would compute different digests than we do
+# and fail verification for a reason unrelated to any control.
+* text=auto eol=lf
+
 # Line endings (platform COPILOT-4, 2026-09-03, applied preventively): shell scripts, Python, YAML,
 # JSON, TOML and Markdown are LF in the repository. A script committed with CRLF fails on Linux
 # (`set -euo pipefail\r`: "invalid option name"). Binary/office files stay opaque.
@@ -20,3 +32,4 @@
 *.png   binary
 *.jpg   binary
 *.drawio text eol=lf
+*.cedar  text eol=lf
