@@ -29,6 +29,28 @@ import sys
 # dropping a detector would hide every secret it would have found.
 IGNORED_TOP_LEVEL = {"generated_at", "version"}
 
+# `detect_secrets.filters.common.is_baseline_file` is not a detector. It exists so the baseline
+# does not flag ITSELF, and it records the baseline's own path - which is whatever path the scan
+# was invoked with. A baseline generated as `.secrets.baseline` and one generated at an absolute
+# path disagree on that field alone, and comparing it as DETECTION COVERAGE made the BLOCKING
+# secret gate fail on three packs with "coverage changed (filters_used)" when nothing about the
+# detection had changed. Compare the filter's presence, not the machine-relative path it carries.
+_PATH_DEPENDENT = {"detect_secrets.filters.common.is_baseline_file": ("filename",)}
+
+
+def _normalise(doc, key):
+    """Strip machine-relative bookkeeping so two baselines of the same tree compare equal."""
+    value = doc.get(key)
+    if key != "filters_used" or not isinstance(value, list):
+        return value
+    out = []
+    for f in value:
+        if isinstance(f, dict):
+            drop = _PATH_DEPENDENT.get(f.get("path"), ())
+            f = {k: v for k, v in f.items() if k not in drop}
+        out.append(f)
+    return sorted(out, key=lambda f: json.dumps(f, sort_keys=True))
+
 
 def _findings(doc):
     """{(filename, type, hashed_secret)} - line numbers move when a file is edited above the
@@ -57,7 +79,7 @@ def main(argv):
     for key in sorted(set(committed) | set(rescanned)):
         if key in IGNORED_TOP_LEVEL or key == "results":
             continue
-        if committed.get(key) != rescanned.get(key):
+        if _normalise(committed, key) != _normalise(rescanned, key):
             print("::error::secrets baseline DETECTION COVERAGE changed (%s) - a dropped plugin or "
                   "filter hides every secret it would have found. Re-baseline deliberately." % key)
             return 1
