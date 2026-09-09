@@ -31,7 +31,14 @@ const body = [
     ["bash", "Any POSIX shell. On Windows, use Git-Bash (see §8)"],
     [code("agentcore"), "bedrock-agentcore-starter-toolkit (installed into the Runtime venv in Step 4)"],
   ], [2600, 7840]),
-  H2("2.3 Project layout"),
+  H2("2.4 Service quotas that bite"),
+  P("Two default quotas will stop this deployment before anything is wrong with it. Check both before you start; neither error names the deployment, and one of them cost four full-portfolio gate runs to diagnose."),
+  table(["Quota", "Default", "What this deployment needs", "Symptom if short"], [
+    [bold("CloudTrail: Trails per region"), "5", "TWO free slots per pack (an account-wide capture-all management trail, and a data-events trail writing to the WORM evidence bucket)", ["CREATE_FAILED on the observability stack: ", code("already has 5 trails in us-east-1"), ". Not adjustable in Service Quotas \u2014 it needs a Support case."]],
+    [bold("AgentCore: policy names"), "n/a", "Policy names are unique per ACCOUNT and region, not per policy engine. Every pack prefixes its names (e.g. ben_fp2_mask_before_assess) so packs can coexist", ["CreatePolicy fails with ", code("ConflictException: Policy with the same name already exists"), " naming neither the policy nor the engine holding it."]],
+  ], [2500, 900, 4200, 2840]),
+  callout("Two overlay packs in one account", [["The trail quota is the binding constraint. Each pack needs two trails, and the shared governance core takes one, so a single region fits the core plus two packs at the default of 5 \u2014 with nothing left for a concurrent validation run. Request an increase to 10 before running two packs and a gate in the same region."]], G.colors.AMBER, "FBF3E7"),
+  H2("2.5 Project layout"),
   bullet([bold("lib/engine/ "), "— the manifest-driven engine: ", code("render.py"), " plus ", code("deploy.sh"), " / ", code("demo.sh"), " / ", code("redteam.sh"), " / ", code("destroy.sh"), " / ", code("deploy_identity.sh"), " and the sign-off state-machine template."]),
   bullet([bold("lib/controls/ "), "— the shared control library: ", code("mask_pii"), ", ", code("write_audit"), ", the sign-off Lambdas, and the MCP client. Reused by every agent."]),
   bullet([bold("lib/runtime/ "), "— the generic Strands agent (", code("agent.py"), ", ", code("Dockerfile"), ", ", code("requirements.txt"), ") and the ", code("_configure/_launch/_invoke/_obs_setup"), " helper scripts (self-locating; run from a fresh clone)."]),
@@ -145,4 +152,4 @@ const body = [
 ];
 
 const doc = makeDoc(cover, body, "Pharmacovigilance AgentCore · SA Deployment Runbook");
-Packer.toBuffer(doc).then((b) => { require("fs").writeFileSync("PV-AgentCore-SA-Runbook.docx", b); console.log("wrote runbook"); });
+Packer.toBuffer(doc).then((b) => { require("fs").writeFileSync(require("path").join(__dirname, "..", "PV-AgentCore-SA-Runbook.docx"), b); console.log("wrote runbook"); });

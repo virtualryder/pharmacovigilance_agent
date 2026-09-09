@@ -86,4 +86,4 @@ const body = [
 ];
 
 const doc = makeDoc(cover, body, "Pharmacovigilance AgentCore · Regulatory-Adherence Guide");
-Packer.toBuffer(doc).then((b) => { require("fs").writeFileSync("PV-AgentCore-Regulatory-Adherence.docx", b); console.log("wrote regulatory"); });
+Packer.toBuffer(doc).then((b) => { require("fs").writeFileSync(require("path").join(__dirname, "..", "PV-AgentCore-Regulatory-Adherence.docx"), b); console.log("wrote regulatory"); });
