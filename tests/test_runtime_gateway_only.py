@@ -1,31 +1,36 @@
-"""RT-4 / #233: the runtime must be reachable only through the gateway.
+"""RT-4 / #233: the gateway-only runtime restriction is OPT-IN, and off by default.
 
-Until 2026-09-08 the AgentCore Runtime's authorizer was:
+The original control set `allowedWorkloadConfiguration` on the runtime's customJWTAuthorizer
+whenever a gateway ARN was present, to close R4-2: "a token that could reach the gateway could ALSO
+reach the runtime directly, past the gateway's Cedar interceptor."
 
-    {"customJWTAuthorizer": {"discoveryUrl": ..., "allowedClients": ["<pool client id>"]}}
+It works, and it makes the agent unreachable. AWS restricts the runtime to workloads in the request's
+identity chain and the only allowed workload type is an AgentCore GATEWAY. Here the gateway is
+DOWNSTREAM of the runtime - its targets are the tool Lambdas built from the manifest, and the runtime
+is not one of them - so nothing ever invokes the runtime through it. Live on 2026-09-09, every proof
+that drives the agent got:
 
-which accepts ANY caller holding a valid JWT for that client - so a token that could reach the
-gateway could also reach the runtime directly, past the gateway's Cedar interceptor. The fourth
-external review recorded this as R4-2; the answer at the time was that the runtime's own model calls
-are IAM- and guardrail-governed, which is true and is not the same as the runtime being unreachable.
+    {"code": -32001, "message": "Transaction token required: authorizer has
+     AllowedWorkloadConfiguration configured"}
 
-AWS ships the field that closes it. `allowedWorkloadConfiguration` on the customJWTAuthorizer
-"restricts which workloads in the request's identity chain are allowed to invoke the target ... At
-launch, this is supported only for AgentCore Runtime targets, and the allowed workloads are
-AgentCore Gateways."
-  https://docs.aws.amazon.com/cli/latest/reference/bedrock-agentcore-control/update-agent-runtime.html
-  https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-oauth.html#deploy-agent-allowed-workload
+and four gate checks failed for that single reason. The repository had already reached the right
+answer and the control contradicted it - MATURITY.yaml, on the fourth external review: "R4-2 ...
+direct runtime invocation by a JWT holder is the designed entry."
 
-These tests pin the two things that make it a control rather than a line of shell: the JSON is the
-shape AWS documents, and a missing gateway ARN REFUSES instead of silently configuring the old
-permissive posture.
+R4-2 is mitigated at the GATEWAY, by Cedar: mask_before_* forbid the consequential tool actions
+unless context.input.deidentified == true, with consent, budget, entitlement and service-window
+gates beside them. Those bind every tool call whoever makes it.
+
+These tests pin the inverted contract. The one that matters most is
+test_a_gateway_arn_alone_does_not_enable_the_restriction: the old code turned the restriction on
+merely because an ARN was in scope, which is exactly how it reached a live deployment without anyone
+choosing it.
 """
 import json
 import os
 import pathlib
 import shutil
 import subprocess
-import sys
 
 import pytest
 
@@ -33,6 +38,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 CONFIGURE = ROOT / "lib" / "runtime" / "_configure.sh"
 
 pytestmark = pytest.mark.skipif(not CONFIGURE.exists(), reason="this pack has no runtime configure script")
+
+GW = "arn:aws:bedrock-agentcore:us-east-1:111122223333:gateway/ben-gw-xyz"
+
 
 def _find_bash():
     """A bash that can run a script at the path we hand it.
@@ -49,44 +57,42 @@ def _find_bash():
             if os.path.isfile(cand):
                 return cand
         found = shutil.which("bash")
-        # Refuse the WSL stub rather than reporting a failure it caused.
         return None if (found and "WindowsApps" in found) else found
     return shutil.which("bash")
 
 
 _BASH = _find_bash()
 
-_HARNESS = r"""
+_HARNESS = """
 set -euo pipefail
 DISCOVERY="https://cognito-idp.us-east-1.amazonaws.com/us-east-1_ABC/.well-known/openid-configuration"
 CLIENT_ID="abc123client"
 STATE="/tmp/fake-spine-state.env"
-%(gw)s
+%(env)s
 %(snippet)s
-printf '%%s\n' "$ACJSON"
+printf '%%s\\n' "$ACJSON"
 """
 
 
 def _snippet():
-    """The RT-4 block from _configure.sh, lifted verbatim so the test cannot drift from the script."""
+    """The RT-4 block lifted verbatim between its markers, so the test cannot drift from the script."""
     src = CONFIGURE.read_text(encoding="utf-8")
-    start = src.index("if [ -n \"${GW_ARN:-}\" ]; then")
-    end = src.index("\n", src.index("ACJSON=", start))
+    start = src.index("# --- RT4-BLOCK-START ---")
+    end = src.index("\n", src.index("ACJSON=", src.index("# --- RT4-BLOCK-END ---")))
     return src[start:end]
 
 
-def _run(gw_line, tmp_path=None):
+def _run(env_lines):
     """Run the lifted snippet through a real bash.
 
     The script goes to a FILE, not `bash -c "<string>"`: on Windows the argv round-trip through
-    bash.EXE mangles the escaped quotes in the JSON, so `bash -c` reported a REFUSED that the same
-    script run from a file does not produce. Testing the quoting is half the point here, so the
+    bash.EXE mangles the escaped quotes in the JSON. Testing the quoting is half the point, so the
     harness must not be the thing that changes it.
     """
     if not _BASH:
         pytest.skip("bash is not available on this machine")
     import tempfile
-    script = _HARNESS % {"gw": gw_line, "snippet": _snippet()}
+    script = _HARNESS % {"env": env_lines, "snippet": _snippet()}
     fd, path = tempfile.mkstemp(suffix=".sh", text=True)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
@@ -99,11 +105,38 @@ def _run(gw_line, tmp_path=None):
             pass
 
 
-def test_the_authorizer_json_is_the_shape_aws_documents():
-    r = _run('GW_ARN="arn:aws:bedrock-agentcore:us-east-1:111122223333:gateway/ben-gw-xyz"')
+def _auth(r):
+    return json.loads(r.stdout.strip().splitlines()[-1])["customJWTAuthorizer"]
+
+
+def test_the_default_leaves_the_runtime_directly_invocable():
+    """Direct invocation by a pool JWT holder is the designed entry (MATURITY.yaml, R4-2)."""
+    r = _run('unset GW_ARN || true')
     assert r.returncode == 0, r.stderr
-    doc = json.loads(r.stdout.strip().splitlines()[-1])
-    auth = doc["customJWTAuthorizer"]
+    auth = _auth(r)
+    assert "allowedWorkloadConfiguration" not in auth, auth
+    assert set(auth) == {"discoveryUrl", "allowedClients"}, auth
+    assert "rt4_gateway_only=OFF" in r.stdout, "the posture must announce itself in the deploy log"
+
+
+def test_a_gateway_arn_alone_does_not_enable_the_restriction():
+    """THE regression guard. The old code enabled it merely because an ARN was in scope.
+
+    Every deploy has a gateway ARN in the spine state, so `if [ -n "$GW_ARN" ]` meant "always on" -
+    which is how a control that breaks the agent reached a live deployment without anyone choosing
+    it. Turning it on must now be a decision, not a side effect of the spine being deployed.
+    """
+    r = _run('GW_ARN="%s"' % GW)
+    assert r.returncode == 0, r.stderr
+    assert "allowedWorkloadConfiguration" not in _auth(r), (
+        "a gateway ARN alone re-enabled the restriction - the agent would be unreachable again")
+    assert "rt4_gateway_only=OFF" in r.stdout
+
+
+def test_the_opt_in_produces_the_shape_aws_documents():
+    r = _run('GW_ARN="%s"\nRT4_GATEWAY_ONLY=1' % GW)
+    assert r.returncode == 0, r.stderr
+    auth = _auth(r)
     assert set(auth) == {"discoveryUrl", "allowedClients", "allowedWorkloadConfiguration"}, auth
     envs = auth["allowedWorkloadConfiguration"]["hostingEnvironments"]
     assert isinstance(envs, list) and envs, envs
@@ -111,18 +144,20 @@ def test_the_authorizer_json_is_the_shape_aws_documents():
     assert arn.startswith("arn:aws:bedrock-agentcore:") and ":gateway/" in arn, arn
 
 
-def test_a_missing_gateway_arn_REFUSES_rather_than_configuring_the_permissive_posture():
-    """Fail-closed. Silently omitting the restriction is the posture this control exists to remove."""
-    r = _run("unset GW_ARN || true")
-    assert r.returncode != 0, (
-        "configuring with no gateway ARN succeeded - the runtime would accept any holder of a pool "
-        "token, bypassing the gateway's Cedar interceptor entirely:\n" + r.stdout)
+def test_the_opt_in_refuses_without_a_gateway_arn():
+    """Fail loud on the OPT-IN. Asking for the restriction and silently not getting it is worse
+    than not asking - that is the half of the original control worth keeping."""
+    r = _run('unset GW_ARN || true\nRT4_GATEWAY_ONLY=1')
+    assert r.returncode != 0, "opting in with no gateway ARN succeeded:\n" + r.stdout
     assert "REFUSED" in (r.stdout + r.stderr)
 
 
-def test_the_permissive_posture_requires_an_explicit_opt_in():
-    r = _run('unset GW_ARN || true\nRT4_ALLOW_UNRESTRICTED=1')
-    assert r.returncode == 0, r.stderr
-    doc = json.loads(r.stdout.strip().splitlines()[-1])
-    assert "allowedWorkloadConfiguration" not in doc["customJWTAuthorizer"]
-    assert "DISABLED" in r.stdout, "the opt-out must announce itself in the deploy log"
+def test_the_authorizer_is_always_valid_json_with_the_base_fields():
+    for env in ('unset GW_ARN || true',
+                'GW_ARN="%s"' % GW,
+                'GW_ARN="%s"\nRT4_GATEWAY_ONLY=1' % GW):
+        r = _run(env)
+        assert r.returncode == 0, (env, r.stderr)
+        auth = _auth(r)
+        assert auth["discoveryUrl"].startswith("https://"), auth
+        assert auth["allowedClients"] == ["abc123client"], auth

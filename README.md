@@ -44,7 +44,7 @@ financial-aid, and housing agents, from a reusable, manifest-driven template.
 > runbook defects. Both runs: `validate_deployment.py` PASS, the deterministic controller ran to the
 > human sign-off gate, DuplicateHold held, and the **strict PHI canary passed with 0 leaks**
 > (Logs / X-Ray / DLQ / Step Functions history), then torn down + residual-swept.
-> Evidence: `evidence/EP1-VALIDATION.md`; tag `v0.1.1-pilot-rc1` (then `v0.2.0-pilot-rc1` after EP2, `v0.3.0-pilot-rc1` after the 2026-09-03 1.9.0 gate). Suite: **325 offline tests**
+> Evidence: `evidence/EP1-VALIDATION.md`; tag `v0.1.1-pilot-rc1` (then `v0.2.0-pilot-rc1` after EP2, `v0.3.0-pilot-rc1` after the 2026-09-03 1.9.0 gate). Suite: **327 offline tests**
 > (control-plane + 48 CDK synthesis assertions). Remaining before real PHI: QPPV SME sign-off,
 > enterprise IdP round-trip, concurrency / replay-storm testing under load, and independent security
 > testing — see `PV-PILOT-READINESS-PLAN.md`.
@@ -142,7 +142,7 @@ npx --yes aws-cdk@2 deploy --all --require-approval never \
 
 Validate, then tear down with a zero-residual sweep — both scripted and documented in the
 deployment guide. Offline verification with no AWS account: `python -m pytest tests/ -q`
-(**325 tests**, including 48 CDK stack-synthesis security assertions).
+(**327 tests**, including 48 CDK stack-synthesis security assertions).
 
 <details>
 <summary><strong>Legacy shell engine — internal reference only, NOT the supported path</strong></summary>
@@ -233,16 +233,34 @@ Content-addressed, so it changes exactly when the thing it names changes. `tests
 asserts it reaches the synthesized functions and that editing a policy moves the digest.
 **IaC-asserted — no live deployment has yet written a row carrying it.**
 
-## Runtime reachable only through the gateway (#233 / RT-4)
+## Gateway-only runtime invocation is available, and OFF by default (#233 / RT-4)
 
-The AgentCore Runtime's authorizer previously accepted any caller holding a valid JWT for the pool
-client — so a token that could reach the gateway could also reach the runtime directly, past the
-Cedar interceptor, the entitlement check, the budget reservation and the audit line.
-`lib/runtime/_configure.sh` now sets `allowedWorkloadConfiguration` so only this deployment's gateway
-may invoke it, and **refuses to configure** if the gateway ARN is missing rather than silently
-falling back to the permissive posture.
-**Configuration-asserted — the proof that a direct call is refused is a live-gate step, not a unit
-test. RT-4 stays open until a gate shows the refusal.**
+The AgentCore Runtime's authorizer accepts any caller holding a valid JWT for the pool client.
+`allowedWorkloadConfiguration` can restrict that to a named AgentCore Gateway, and
+`lib/runtime/_configure.sh` can set it - but only when `RT4_GATEWAY_ONLY=1` is passed explicitly.
+
+**It is off by default because turning it on makes the agent unreachable in this architecture.**
+The only allowed workload type is an AgentCore Gateway, and here the gateway is DOWNSTREAM of the
+runtime: its targets are the tool Lambdas built from the manifest, and the runtime is not one of
+them. Nothing invokes the runtime through the gateway, so with the restriction on there is no
+permitted invoker. Live on 2026-09-09 every proof that drives the agent returned
+`-32001 Transaction token required: authorizer has AllowedWorkloadConfiguration configured`, and
+four full-portfolio gate checks failed for that one reason.
+
+R4-2 is mitigated where it actually bites: **at the gateway, by Cedar.** The exposure worth
+worrying about is a token holder calling the gateway directly and skipping the agent's masking
+step, and `mask_before_assess` / `mask_before_draft` / `mask_before_overpayment` /
+`mask_before_redetermine` forbid exactly that unless `context.input.deidentified == true`, with the
+consent, budget, entitlement and service-window gates beside them in the perimeter profile. Those
+bind every tool call whoever makes it. This is consistent with what the fourth external review
+already concluded and `MATURITY.yaml` already records: *direct runtime invocation by a JWT holder is
+the designed entry.*
+
+The opt-in is kept, and still fails loud: `RT4_GATEWAY_ONLY=1` with no gateway ARN REFUSES rather
+than configuring silently, because asking for the restriction and not getting it is worse than not
+asking. It is correct for a deployment where the runtime IS exposed as a gateway target.
+**Live-proven: the default posture deploys and the agent is invocable. The opt-in posture is
+unit-tested, not live-proven.**
 
 ## Honesty boundary
 

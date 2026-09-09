@@ -5,34 +5,56 @@ AGENT="$(cd "${1:?usage: _configure.sh <agent_dir>}" && pwd)"; cd "$SELF"; sourc
 [ -f "$STATE" ] || { echo "spine-state not found ($STATE). Deploy the spine first (lib/engine/deploy.sh)."; exit 1; }
 source "$STATE"   # DISCOVERY, CLIENT_ID, GW_URL
 # RT-4 / #233: RESTRICT RUNTIME INVOCATION TO THE GATEWAY.
-# Until 2026-09-08 the runtime's authorizer accepted any caller holding a valid JWT for the pool's
-# client id - so a token that could reach the gateway could ALSO reach the runtime directly, past
-# the gateway's Cedar interceptor. The fourth external review recorded that as R4-2 and the answer
-# was "the runtime's own model calls are IAM + guardrail governed, not gateway governed", which is
-# true and is not the same as being unreachable.
+# RT-4, REVISED 2026-09-09 by the first gate run that got far enough to execute it.
 #
-# AWS added the field that closes it. `allowedWorkloadConfiguration` on the customJWTAuthorizer
-# "restricts which workloads in the request's identity chain are allowed to invoke the target,
-# identified by their hosting environments and workload identities. At launch, this is supported
-# only for AgentCore Runtime targets, and the allowed workloads are AgentCore Gateways."
+# The original form set `allowedWorkloadConfiguration` unconditionally whenever a gateway ARN was
+# present, to close R4-2: "a token that could reach the gateway could ALSO reach the runtime
+# directly, past the gateway Cedar interceptor."
+#
+# It works - and it makes the agent unreachable. AWS restricts the runtime to workloads in the
+# request identity chain, and the only allowed workload type is an AgentCore GATEWAY. In this
+# architecture the gateway is DOWNSTREAM of the runtime: its targets are the tool Lambdas built
+# from the manifest, and the runtime is not one of them. Nothing here ever invokes the runtime
+# through the gateway, so with the restriction on, the runtime has no permitted invoker at all.
+# Live on 2026-09-09 every proof that drives the agent got:
+#     {"code": -32001, "message": "Transaction token required: authorizer has
+#      AllowedWorkloadConfiguration configured"}
+# and four gate checks failed for that one reason (G111, kill-switch, budget, guardrail-assessed).
+#
+# The repository had already reached the right conclusion and RT-4 contradicted it. MATURITY.yaml,
+# recording the fourth external review: "Partly right: R4-2 - the runtime own model calls are
+# IAM+guardrail governed, not gateway governed (claim fixed); DIRECT RUNTIME INVOCATION BY A JWT
+# HOLDER IS THE DESIGNED ENTRY." The platform README says the same at line 138.
+#
+# Where R4-2 is actually mitigated: at the GATEWAY, by Cedar. The exposure worth worrying about is
+# the opposite direction - a token holder calling the gateway directly and skipping the agent's
+# masking step - and mask_before_assess / mask_before_draft / mask_before_overpayment /
+# mask_before_redetermine forbid exactly that unless context.input.deidentified == true, with
+# consent, budget, entitlement and service-window gates beside them in the perimeter profile.
+# Those are enforced on every tool call whoever makes it. That is the control; this was not.
+#
+# So the restriction is OPT-IN, and off by default. It stays in the tree because it is correct for
+# a deployment where the runtime IS exposed as a gateway target - the shape AWS built the field
+# for. Turning it on without that topology breaks the agent, which is why the default changed
+# rather than the code being deleted.
+#
+# FAIL LOUD ON THE OPT-IN, not on the default: RT4_GATEWAY_ONLY=1 with no GW_ARN refuses, because
+# asking for the restriction and silently not getting it is the failure this half of the control
+# exists to prevent.
 #   https://docs.aws.amazon.com/cli/latest/reference/bedrock-agentcore-control/update-agent-runtime.html
 #   https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-oauth.html#deploy-agent-allowed-workload
-#
-# hostingEnvironments takes the GATEWAY ARN directly, which the spine state already carries as
-# GW_ARN - no extra discovery call, no new failure mode.
-#
-# FAIL LOUD, NOT OPEN. If GW_ARN is absent the runtime would be configured accepting any holder of a
-# pool token, which is the posture this exists to remove. Set RT4_ALLOW_UNRESTRICTED=1 to configure
-# without it deliberately (a gateway-less experiment); the default refuses.
-if [ -n "${GW_ARN:-}" ]; then
+# --- RT4-BLOCK-START ---   (tests/test_runtime_gateway_only.py lifts between these markers)
+if [ "${RT4_GATEWAY_ONLY:-0}" = "1" ]; then
+  if [ -z "${GW_ARN:-}" ]; then
+    echo "REFUSED: RT4_GATEWAY_ONLY=1 but no GW_ARN in $STATE. Asking for the gateway-only runtime posture and silently not getting it is worse than not asking: deploy the spine first, or unset RT4_GATEWAY_ONLY."; exit 1
+  fi
   WORKLOAD=",\"allowedWorkloadConfiguration\":{\"hostingEnvironments\":[{\"arn\":\"$GW_ARN\"}]}"
-  echo "rt4_gateway_only=$GW_ARN"
-elif [ "${RT4_ALLOW_UNRESTRICTED:-0}" = "1" ]; then
-  WORKLOAD=""
-  echo "rt4_gateway_only=DISABLED (RT4_ALLOW_UNRESTRICTED=1) - the runtime will accept any holder of a pool token"
+  echo "rt4_gateway_only=$GW_ARN (OPT-IN: the runtime will accept ONLY calls whose identity chain includes this gateway - correct only if the runtime is a gateway TARGET)"
 else
-  echo "REFUSED: no GW_ARN in $STATE, so the runtime would be configured to accept ANY caller holding a valid pool JWT - bypassing the gateway's Cedar interceptor entirely (RT-4). Deploy the spine first, or set RT4_ALLOW_UNRESTRICTED=1 to accept that posture deliberately."; exit 1
+  WORKLOAD=""
+  echo "rt4_gateway_only=OFF (default) - a pool JWT holder invokes the runtime directly, which is the designed entry (MATURITY.yaml, fourth review R4-2). R4-2 is mitigated at the GATEWAY by the Cedar mask/consent/budget/entitlement policies, not here."
 fi
+# --- RT4-BLOCK-END ---
 ACJSON="{\"customJWTAuthorizer\":{\"discoveryUrl\":\"$DISCOVERY\",\"allowedClients\":[\"$CLIENT_ID\"]$WORKLOAD}}"
 echo "runtime=$RUNTIME_NAME"
 # EXECUTION ROLE AS IaC (third external review, 2026-09-05; RT-3 port from benefits): never let the toolkit
